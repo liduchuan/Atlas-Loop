@@ -8,15 +8,12 @@ import {
   Handle,
   Position,
   MarkerType,
-  BaseEdge,
-  EdgeLabelRenderer,
-  getBezierPath,
   useNodesState,
   useEdgesState,
   useReactFlow,
-  useStore,
 } from '@xyflow/react';
 import dagre from '@dagrejs/dagre';
+import { toPng } from 'html-to-image';
 
 const I18N_DICT = {
   zh: {
@@ -35,6 +32,7 @@ const I18N_DICT = {
     fitView: '适配全图',
     reset: '重置',
     legend: '图例',
+    exportPng: '导出 PNG',
     scopeNotes: '范围与待确认',
     learningPath: '推荐顺序',
     expandDetail: '展开细节',
@@ -94,6 +92,7 @@ const I18N_DICT = {
     fitView: 'Fit View',
     reset: 'Reset',
     legend: 'Legend',
+    exportPng: 'Export PNG',
     scopeNotes: 'Scope & Notes',
     learningPath: 'Learning Order',
     expandDetail: 'Details',
@@ -253,6 +252,16 @@ function IconLegend() {
   );
 }
 
+function IconExport() {
+  return (
+    <StrokeIcon>
+      <path d="M12 3v12" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M5 21h14" />
+    </StrokeIcon>
+  );
+}
+
 function IconDeepDive() {
   return (
     <StrokeIcon size={13}>
@@ -382,9 +391,11 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
             id: bridgeId,
             source: n.id,
             target: subFlowId,
-            type: 'atlasEdge',
             label: t.detailEdgeLabel,
             style: { stroke: '#71717a', strokeWidth: 1.4, strokeDasharray: '4 4' },
+            labelStyle: { fill: '#52525b', fontSize: 10.5, fontWeight: 500 },
+            labelBgStyle: { fill: '#fafafa', fillOpacity: 0.94 },
+            labelBgPadding: [5, 2],
             markerEnd: { type: MarkerType.ArrowClosed, color: '#71717a' },
           });
         }
@@ -399,9 +410,11 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
           id: `subedge::${n.id}::${se.id || idx}`,
           source: sId,
           target: tId,
-          type: 'atlasEdge',
           label: se.label || '',
           style: { stroke: '#a1a1aa', strokeWidth: 1.4 },
+          labelStyle: { fill: '#52525b', fontSize: 10.5, fontWeight: 500 },
+          labelBgStyle: { fill: '#ffffff', fillOpacity: 0.94 },
+          labelBgPadding: [5, 2],
           markerEnd: { type: MarkerType.ArrowClosed, color: '#a1a1aa' },
         });
       }
@@ -416,9 +429,12 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
       id: e.id || `edge-${idx}`,
       source: e.source,
       target: e.target,
-      type: 'atlasEdge',
       label: e.label || '',
       style: { stroke: '#71717a', strokeWidth: 1.5 },
+      labelStyle: { fill: '#27272a', fontSize: 11, fontWeight: 500 },
+      labelBgStyle: { fill: '#ffffff', fillOpacity: 0.95 },
+      labelBgPadding: [6, 3],
+      labelBgBorderRadius: 4,
       markerEnd: { type: MarkerType.ArrowClosed, color: '#71717a' },
     });
   }
@@ -546,112 +562,6 @@ function AtlasNode({ id, data, selected }) {
 }
 
 const NODE_TYPES = { atlasNode: AtlasNode };
-
-function nodeBox(node) {
-  const abs = node.internals?.positionAbsolute;
-  if (!abs) return null;
-  const w = node.measured?.width || node.width || node.style?.width || 0;
-  const h = node.measured?.height || node.height || node.style?.height || node.style?.minHeight || 0;
-  if (w <= 0 || h <= 0) return null;
-  return { left: abs.x, right: abs.x + w, top: abs.y, bottom: abs.y + h };
-}
-
-// 标签是水平居中的。宽度取它到周围节点的水平空隙，节点一动就重算。
-function edgeLabelMaxWidth(nodeLookup, labelX, labelY) {
-  const band = 20;
-  const gap = 8;
-  let half = Infinity;
-  let sawNode = false;
-  for (const node of nodeLookup.values()) {
-    const box = nodeBox(node);
-    if (!box) continue;
-    sawNode = true;
-    const overlapsY = labelY + band / 2 > box.top && labelY - band / 2 < box.bottom;
-    if (!overlapsY) continue;
-    if (box.right + gap <= labelX) half = Math.min(half, labelX - box.right - gap);
-    else if (box.left - gap >= labelX) half = Math.min(half, box.left - labelX - gap);
-    else half = 0;
-  }
-  if (!sawNode) return null;
-  if (!Number.isFinite(half) || half <= 0) return 0;
-  return Math.floor(half * 2);
-}
-
-function useEdgeLabelMaxWidth(labelX, labelY) {
-  return useStore((state) => edgeLabelMaxWidth(state.nodeLookup, labelX, labelY));
-}
-
-function AtlasEdgeLabel({ text, x, y, maxWidth }) {
-  const textRef = useRef(null);
-  const [truncated, setTruncated] = useState(false);
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    const el = textRef.current;
-    if (!el) return;
-    setTruncated(el.scrollWidth > el.clientWidth + 1);
-  }, [text, maxWidth]);
-
-  return (
-    <EdgeLabelRenderer>
-      <div
-        className="atlas-edge-label nopan"
-        style={{
-          transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`,
-          maxWidth: maxWidth == null ? undefined : maxWidth,
-        }}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-      >
-        <span ref={textRef} className="atlas-edge-label-text" data-testid="edge-label" title={truncated ? text : undefined}>
-          {text}
-        </span>
-        {open && truncated && (
-          <div className={`atlas-edge-label-tip ${y < 56 ? 'below' : ''}`} role="tooltip">
-            {text}
-          </div>
-        )}
-      </div>
-    </EdgeLabelRenderer>
-  );
-}
-
-function AtlasEdge({
-  id,
-  sourceX,
-  sourceY,
-  targetX,
-  targetY,
-  sourcePosition,
-  targetPosition,
-  style,
-  markerEnd,
-  label,
-}) {
-  const [edgePath, labelX, labelY] = getBezierPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
-  });
-  const text = typeof label === 'string' ? label.trim() : '';
-  const maxWidth = useEdgeLabelMaxWidth(labelX, labelY);
-
-  return (
-    <>
-      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} interactionWidth={16} />
-      {text && maxWidth !== 0 && (
-        <AtlasEdgeLabel text={text} x={labelX} y={labelY} maxWidth={maxWidth} />
-      )}
-    </>
-  );
-}
-
-const EDGE_TYPES = { atlasEdge: AtlasEdge };
 
 function CopyButton({ text, label, copiedLabel, testId = 'btn-copy-prompt', small = false }) {
   const [copied, setCopied] = useState(false);
@@ -872,6 +782,40 @@ function ScopeModal({ open, uncoveredScopes, unverifiedNotes, t, onClose }) {
   );
 }
 
+function pngFileName(title) {
+  const cleaned = String(title || 'atlas')
+    .replace(/[\\/:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return `${(cleaned || 'atlas').slice(0, 80)}.png`;
+}
+
+async function exportVisibleCanvas(container, title) {
+  const flow = container.querySelector('.react-flow');
+  if (!flow) return;
+  const width = Math.round(container.clientWidth);
+  const height = Math.round(container.clientHeight);
+  const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
+  const dataUrl = await toPng(flow, {
+    backgroundColor: '#fafafa',
+    width,
+    height,
+    pixelRatio,
+    skipFonts: true,
+    filter: (node) => {
+      const className = node?.classList;
+      if (!className) return true;
+      return !className.contains('react-flow__minimap')
+        && !className.contains('react-flow__controls')
+        && !className.contains('react-flow__attribution');
+    },
+  });
+  const link = document.createElement('a');
+  link.href = dataUrl;
+  link.download = pngFileName(title);
+  link.click();
+}
+
 function AtlasCanvasApp({ data }) {
   const meta = data.meta || {};
   const t = useMemo(() => resolveI18n(meta), [meta]);
@@ -897,6 +841,8 @@ function AtlasCanvasApp({ data }) {
   const [expandedIds, setExpandedIds] = useState(() => new Set());
   const [isLocked, setIsLocked] = useState(true);
   const [showLegend, setShowLegend] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const canvasRef = useRef(null);
   const [showScopeModal, setShowScopeModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedId, setSelectedId] = useState(null);
@@ -1310,6 +1256,25 @@ function AtlasCanvasApp({ data }) {
             >
               <IconLegend />
             </button>
+            <button
+              type="button"
+              data-testid="btn-export-png"
+              aria-label={t.exportPng}
+              title={t.exportPng}
+              className="atlas-ctrl-btn"
+              disabled={exporting}
+              onClick={async () => {
+                if (!canvasRef.current || exporting) return;
+                setExporting(true);
+                try {
+                  await exportVisibleCanvas(canvasRef.current, meta.title);
+                } finally {
+                  setExporting(false);
+                }
+              }}
+            >
+              <IconExport />
+            </button>
           </div>
         </div>
       </div>
@@ -1341,12 +1306,11 @@ function AtlasCanvasApp({ data }) {
       )}
 
       <main id="atlas-main" className="atlas-main-workspace">
-        <div className="atlas-canvas-container" data-testid="atlas-canvas-wrap">
+        <div className="atlas-canvas-container" data-testid="atlas-canvas-wrap" ref={canvasRef}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
             nodeTypes={NODE_TYPES}
-            edgeTypes={EDGE_TYPES}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeClick={(_, node) => setSelectedId(node.id)}

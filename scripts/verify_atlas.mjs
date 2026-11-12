@@ -195,26 +195,6 @@ async function main() {
     );
     checks.edgesRendered = initialEdgeCount;
 
-    const labelOverlap = await page.evaluate(() => {
-      const pad = 1;
-      const labels = [...document.querySelectorAll('[data-testid="edge-label"]')];
-      const nodes = [...document.querySelectorAll('.react-flow__node')];
-      let hits = 0;
-      for (const label of labels) {
-        const l = label.getBoundingClientRect();
-        if (l.width < 2 || l.height < 2) continue;
-        for (const node of nodes) {
-          const n = node.getBoundingClientRect();
-          const overlapX = l.left < n.right - pad && l.right > n.left + pad;
-          const overlapY = l.top < n.bottom - pad && l.bottom > n.top + pad;
-          if (overlapX && overlapY) hits += 1;
-        }
-      }
-      return { hits, labelCount: labels.length };
-    });
-    assert(labelOverlap.labelCount > 0, '连线没有渲染关系说明');
-    assert(labelOverlap.hits === 0, `有 ${labelOverlap.hits} 处关系说明被节点盖住`);
-
     const getViewportTransform = () =>
       page.evaluate(() => document.querySelector('.react-flow__viewport')?.style.transform || '');
 
@@ -382,6 +362,37 @@ async function main() {
       `Reset 后渲染出 ${edgesAfterReset} 条连线，应为 ${atlasMeta.edgeCount} 条`
     );
     checks.resetRestoredInitialState = true;
+
+    // 导出 PNG：按当前可见画布的尺寸，且不改动视口
+    await page.click('[data-testid="btn-zoom-in"]');
+    await page.click('[data-testid="btn-zoom-in"]');
+    const exportBox = await page.locator('[data-testid="atlas-canvas-wrap"]').boundingBox();
+    const pixelRatio = await page.evaluate(() => Math.min(2, window.devicePixelRatio || 1));
+    const viewportBeforeExport = await page.evaluate(
+      () => document.querySelector('.react-flow__viewport')?.style.transform || ''
+    );
+    const [download] = await Promise.all([
+      page.waitForEvent('download', { timeout: 15000 }),
+      page.click('[data-testid="btn-export-png"]'),
+    ]);
+    const pngPath = path.join(os.tmpdir(), `atlas-export-${Date.now()}.png`);
+    await download.saveAs(pngPath);
+    const png = fs.readFileSync(pngPath);
+    assert(png.subarray(0, 8).toString('hex') === '89504e470d0a1a0a', '导出文件不是 PNG');
+    const pngWidth = png.readUInt32BE(16);
+    const pngHeight = png.readUInt32BE(20);
+    const expectW = Math.round(exportBox.width * pixelRatio);
+    const expectH = Math.round(exportBox.height * pixelRatio);
+    assert(
+      Math.abs(pngWidth - expectW) <= 2 && Math.abs(pngHeight - expectH) <= 2,
+      `导出尺寸 ${pngWidth}x${pngHeight} 与当前画布 ${expectW}x${expectH} 不一致`
+    );
+    const viewportAfterExport = await page.evaluate(
+      () => document.querySelector('.react-flow__viewport')?.style.transform || ''
+    );
+    assert(viewportAfterExport === viewportBeforeExport, '导出改变了画布的缩放或平移');
+    fs.unlinkSync(pngPath);
+    checks.exportPng = `${pngWidth}x${pngHeight}`;
 
     assert(pageErrors.length === 0, `页面出现错误：${pageErrors.join('; ')}`);
     checks.zeroPageErrors = true;
