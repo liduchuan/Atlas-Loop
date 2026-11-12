@@ -11,29 +11,31 @@ const PKG_ROOT = path.resolve(__dirname, '..');
 function readVersion() {
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf8'));
-    return pkg.version || '0.1.0';
+    return pkg.version || '0.1.1';
   } catch (_) {
-    return '0.1.0';
+    return '0.1.1';
   }
 }
 
 function printHelp() {
-  console.log(`@liduchuan/atlas-loop v${readVersion()}
+  console.log(`Atlas Loop (@liduchuan/atlas-loop v${readVersion()})
 
 Usage:
   npx @liduchuan/atlas-loop install [--dir <skills-dir>]
+  npx @liduchuan/atlas-loop dev [--port 5179] [--data <graph-data.json>]
   npx @liduchuan/atlas-loop build --data <graph-data.json> [--out <output.html>]
   npx @liduchuan/atlas-loop verify --html <output.html>
 
 Commands:
   install   Copy the atlas-loop skill into an Agent skills directory (default: ~/.agents/skills/atlas-loop)
+  dev       Launch the local live-reload runtime for template & style debugging
   build     Validate AtlasGraphData JSON and synthesize a standalone offline HTML learning map
   verify    Run headless Playwright verification against a generated HTML learning map
 `);
 }
 
 function copySkillFiles(destDir) {
-  const items = ['SKILL.md', 'assets', 'references', 'scripts'];
+  const items = ['SKILL.md', 'assets', 'references', 'scripts', 'template'];
   fs.mkdirSync(destDir, { recursive: true });
   for (const name of items) {
     const src = path.join(PKG_ROOT, name);
@@ -54,9 +56,9 @@ function resolveInstallDir(args) {
   return path.join(os.homedir(), '.agents', 'skills', 'atlas-loop');
 }
 
-function runScript(scriptName, forwardArgs) {
-  const scriptPath = path.join(PKG_ROOT, 'scripts', scriptName);
-  const res = spawnSync(process.execPath, [scriptPath, ...forwardArgs], { stdio: 'inherit' });
+function runNodeFile(relFilePath, forwardArgs) {
+  const fullPath = path.join(PKG_ROOT, relFilePath);
+  const res = spawnSync(process.execPath, [fullPath, ...forwardArgs], { stdio: 'inherit' });
   process.exit(res.status ?? 1);
 }
 
@@ -76,16 +78,20 @@ if (cmd === '-v' || cmd === '--version' || cmd === 'version') {
 if (cmd === 'install') {
   const dest = resolveInstallDir(argv.slice(1));
   copySkillFiles(dest);
-  console.log(`Installed atlas-loop skill to: ${dest}`);
+  console.log(`Installed Atlas Loop skill to: ${dest}`);
   process.exit(0);
 }
 
+if (cmd === 'dev') {
+  runNodeFile(path.join('template', 'dev-server.mjs'), argv.slice(1));
+}
+
 if (cmd === 'build') {
-  runScript('build_atlas.mjs', argv.slice(1));
+  runNodeFile(path.join('scripts', 'build_atlas.mjs'), argv.slice(1));
 }
 
 if (cmd === 'verify') {
-  runScript('verify_atlas.mjs', argv.slice(1));
+  runNodeFile(path.join('scripts', 'verify_atlas.mjs'), argv.slice(1));
 }
 
 console.error(`Unknown command: ${cmd}\n`);

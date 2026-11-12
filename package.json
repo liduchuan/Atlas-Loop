@@ -1,7 +1,7 @@
 {
   "name": "@liduchuan/atlas-loop",
-  "version": "0.1.0",
-  "description": "Universal recursive learning-map Agent Skill — dissect any unfamiliar subject into a standalone offline interactive HTML atlas with per-node deep-dive and recursive sub-atlas prompts.",
+  "version": "0.1.1",
+  "description": "Atlas Loop — Universal recursive learning-map Agent Skill that dissects any unfamiliar subject into a standalone offline interactive HTML atlas with per-node deep-dive and recursive sub-atlas prompts.",
   "type": "module",
   "license": "MIT",
   "author": "liduchuan",
@@ -16,12 +16,17 @@
   "bin": {
     "atlas-loop": "bin/atlas-loop.mjs"
   },
+  "scripts": {
+    "dev": "node template/dev-server.mjs",
+    "build:shell": "node template/build-shell.mjs"
+  },
   "files": [
     "SKILL.md",
     "README.md",
     "assets",
     "references",
     "scripts",
+    "template",
     "bin"
   ],
   "keywords": [
@@ -33,6 +38,13 @@
     "react-flow",
     "atlas-loop"
   ],
+  "devDependencies": {
+    "@dagrejs/dagre": "^1.1.8",
+    "@xyflow/react": "^12.12.1",
+    "esbuild": "^0.25.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
   "engines": {
     "node": ">=18.0.0"
   },

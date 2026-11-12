@@ -237,7 +237,7 @@ function main() {
 
   const finalHtml = shellHtml
     .replace('__ATLAS_HTML_LANG__', escapeHtml(meta.language || 'en'))
-    .replace('__ATLAS_HTML_TITLE__', escapeHtml(`${meta.title} — AtlasLoop`))
+    .replace('__ATLAS_HTML_TITLE__', escapeHtml(`${meta.title} — Atlas Loop`))
     .replace('__ATLAS_DATA_JSON__', () => safeJsonPayload);
 
   fs.mkdirSync(path.dirname(outPath), { recursive: true });

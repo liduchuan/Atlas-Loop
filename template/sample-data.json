@@ -1,0 +1,253 @@
+{
+  "schemaVersion": "2.0",
+  "meta": {
+    "title": "意式浓缩萃取物理机制（Espresso Extraction）",
+    "subtitle": "从研磨粒径分布、渗流阻力到金杯风味平衡的因果体系",
+    "subjectTag": "食品物理 / 冲煮技艺",
+    "language": "zh-CN",
+    "generatedByModel": "Atlas Loop Preview",
+    "level": 0,
+    "drillDownTarget": null,
+    "parentMapHtml": null,
+    "editor": "vscode",
+    "uncoveredScopes": [
+      "不同烘焙度细胞壁孔隙率的热解化学动力学细节未在此全景图展开"
+    ],
+    "unverifiedNotes": [
+      "极细粉在预浸泡阶段的电化学团聚效应在学界仍存在两种竞争假说"
+    ]
+  },
+  "streams": [
+    {
+      "id": "stream-hydro",
+      "title": "流体渗透与阻力主线",
+      "summary": "高压热水穿过压实粉床时的渗流规律与通道风险",
+      "learningOrder": ["n-grind", "n-puck-prep", "n-channel-branch", "n-balance"],
+      "deepDive": {
+        "hoverHint": "深究变压曲线如何抑制后段粉饼结构崩解",
+        "askPrompts": [
+          {
+            "title": "推演恒压 9 bar 与渐降压曲线的后段流速差异",
+            "prompt": "在意式萃取中后段随着可溶物析出、粉饼机械强度下降，为什么将压力从 9 bar 平滑降至 6 bar 反而能维持更均匀的渗流并减少尾段木质涩感？请结合达西定律解释。"
+          }
+        ],
+        "subAtlasPrompt": "使用 Atlas Loop 递归生成 L1 专题子地图，目标：「意式变压与变流量萃取曲线机制」，父级地图 espresso-extraction-atlas.html"
+      }
+    },
+    {
+      "id": "stream-solubles",
+      "title": "风味物质分阶段溶出",
+      "summary": "酸、甜、苦不同分子量化合物随萃取推进的析出次序",
+      "learningOrder": ["n-grind", "n-solubility", "n-balance"],
+      "deepDive": {
+        "hoverHint": "深究水温梯度对极性与非极性风味分子的选择性",
+        "askPrompts": [
+          {
+            "title": "对比浅烘与深烘豆在 88°C vs 94°C 下的溶出速率曲线",
+            "prompt": "为什么浅烘高密度豆需要 93°C 以上水温来提升前中段甜感转化，而深烘豆在同样水温下极易在尾段析出过量绿原酸内酯导致焦苦？"
+          }
+        ],
+        "subAtlasPrompt": "使用 Atlas Loop 递归生成 L1 专题子地图，目标：「不同烘焙度风味化合物的溶解动力学」，父级地图 espresso-extraction-atlas.html"
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n-grind",
+      "streamIds": ["stream-hydro", "stream-solubles"],
+      "role": "entry",
+      "title": "双峰粒径分布（主粒径与极细粉）",
+      "summary": "磨豆机刀盘决定粗细颗粒比例，同时设定总比表面积与粉床孔隙率",
+      "whyItMatters": "它是流速与风味溶出速率的共同源头，微调几微米即可改变整体平衡",
+      "keyFactors": {
+        "inputs": "咖啡豆脆度、刀盘几何（平刀 / 锥刀）、转速 RPM",
+        "outputs": "主峰粒径（200–400 μm）+ 极细粉占比（< 100 μm）"
+      },
+      "mechanismsAndEffects": "极细粉贡献绝大部分瞬时接触表面积，而主峰颗粒搭建支撑骨架防止粉床完全堵死",
+      "watchouts": "并非粒径越均匀越好：完全筛除极细粉会令意式浓缩失去醇厚度（Body）与油脂挂杯感",
+      "confidence": "verified",
+      "anchors": [
+        {
+          "kind": "snippet",
+          "label": "达西渗流简化关系",
+          "content": "Q = (k · A · ΔP) / (μ · L)   // 渗透率 k 对粒径平方高度敏感"
+        }
+      ],
+      "deepDive": {
+        "hoverHint": "深究平刀与锥刀在粒径双峰形态与风味清晰度上的差异",
+        "askPrompts": [
+          {
+            "title": "对比大直径平刀与锥刀的粒径分布曲线及风味表现",
+            "prompt": "从磨豆机粉碎路径（多次切削 vs 挤压破碎）分析：为什么高同心度平刀通常呈现更窄的主峰与更高风味分离度，而锥刀往往带来更宽的双峰与更圆润厚重的触感？"
+          }
+        ],
+        "subAtlasPrompt": "使用 Atlas Loop 递归生成 L1 专题子地图，目标：「平刀与锥刀粉碎几何学与粒径控制」，父级地图 espresso-extraction-atlas.html"
+      }
+    },
+    {
+      "id": "n-puck-prep",
+      "streamIds": ["stream-hydro"],
+      "role": "core",
+      "title": "布粉均质化与低压预浸泡",
+      "summary": "打散静电结块并缓慢润湿粉饼纤维，消除局部低密度薄弱区",
+      "whyItMatters": "高压水流具有极强的马太效应，任何初始密度不均都会被瞬间放大为击穿通道",
+      "keyFactors": {
+        "inputs": "针式布粉（WDT）、垂直恒力压粉、2–3 bar 低压浸润",
+        "outputs": "各向同性膨胀的饱和粉饼"
+      },
+      "mechanismsAndEffects": "纤维吸水膨胀缩小大孔隙，使主升压阶段水流前锋保持水平推进",
+      "watchouts": "压粉力度超过 15 kg 后对粉床密度几乎无额外提升，压粉水平度远比绝对大力更关键",
+      "confidence": "verified",
+      "anchors": [],
+      "detailGraph": {
+        "nodes": [
+          {
+            "id": "sub-wdt",
+            "role": "core",
+            "title": "0.3mm 细针打散静电团块",
+            "summary": "破坏落粉时形成的局部高密核心与架桥空洞",
+            "anchors": []
+          },
+          {
+            "id": "sub-bloom",
+            "role": "foundation",
+            "title": "二氧化碳排空与纤维润胀",
+            "summary": "低压阶段排出烘焙残余气体，降低气阻干扰",
+            "anchors": []
+          }
+        ],
+        "edges": [
+          {
+            "id": "se-prep",
+            "source": "sub-wdt",
+            "target": "sub-bloom",
+            "label": "恒力压平后通水润湿"
+          }
+        ]
+      },
+      "deepDive": {
+        "hoverHint": "深究养豆期二氧化碳残留如何诱发微通道气阻",
+        "askPrompts": [
+          {
+            "title": "分析极新鲜烘焙豆（< 3 天）萃取流速失稳的物理原因",
+            "prompt": "刚出炉不足 3 天的咖啡豆在 9 bar 热水接触下释放大量 CO2 微气泡，这些气泡如何在粉饼孔隙中形成局部气锁（Gas Lock）并迫使水流改道产生通道效应？"
+          }
+        ],
+        "subAtlasPrompt": "使用 Atlas Loop 递归生成 L1 专题子地图，目标：「养豆排气的物理扩散模型与预浸泡参数匹配」，父级地图 espresso-extraction-atlas.html"
+      }
+    },
+    {
+      "id": "n-channel-branch",
+      "streamIds": ["stream-hydro"],
+      "role": "branch",
+      "title": "临界压力下的均匀层流 vs 局部通道击穿",
+      "summary": "粉饼结构能否承受 6–9 bar 压差而不产生局部裂隙高速射流",
+      "whyItMatters": "决定一杯浓缩是甜润均衡，还是同时出现尖酸（周边欠萃）与干涩（通道壁严重过萃）",
+      "keyFactors": {
+        "inputs": "粉饼均匀度、泵压爬升斜率、顶空余量（Headspace）",
+        "outputs": "均匀层流析出 | 局部喷射与偏流"
+      },
+      "mechanismsAndEffects": "调得过细反而会因局部阻力过高被高压直接撕裂粉床，导致实测总萃取率不升反降",
+      "watchouts": "切勿只盯总时间：同样 28 秒出液 36g，可能掩盖了前慢后喷的隐性通道",
+      "confidence": "unverified",
+      "unverifiedReason": "极细粉在高压下究竟是填补微裂隙自愈还是加速堵塞，目前流体实验尚存争议",
+      "anchors": [
+        {
+          "kind": "source",
+          "label": "实验研究参考",
+          "citation": "Cameron et al. (2020), Systematically Improving Espresso, Matter 2(3), 631–648"
+        }
+      ],
+      "deepDive": {
+        "hoverHint": "深究 Cameron 论文发现的「研磨过细反而降低萃取率」反直觉拐点",
+        "askPrompts": [
+          {
+            "title": "精读 Matter 2020 论文中研磨度与萃取率的倒 U 型拐点",
+            "prompt": "为什么在 Cameron 等人 2020 年发表于《Matter》的意式浓缩模型与实验中，当磨豆机刻度越过某个临界细度后，平均萃取率（EY%）会出现断崖式下跌且杯间方差急剧放大？"
+          }
+        ],
+        "subAtlasPrompt": "使用 Atlas Loop 递归生成 L1 专题子地图，目标：「意式浓缩研磨细度—萃取率倒 U 型拐点模型」，父级地图 espresso-extraction-atlas.html"
+      }
+    },
+    {
+      "id": "n-solubility",
+      "streamIds": ["stream-solubles"],
+      "role": "foundation",
+      "title": "风味化合物极性与分子量溶解梯队",
+      "summary": "果酸与花香最先溶出，美拉德甜感居中，大分子苦涩木质调最后析出",
+      "whyItMatters": "解释了为何截断粉液比（如 Ristretto 1:1.5 vs Lungo 1:3）能直接重塑风味结构",
+      "keyFactors": {
+        "inputs": "水温、接触时间、通过粉饼的总水量",
+        "outputs": "前段明亮酸香 → 中段焦糖甜醇 → 尾段苦韵与收敛感"
+      },
+      "mechanismsAndEffects": "高极性小分子有机酸几乎瞬间溶解，而疏水性油脂乳化与高分子黑精需更多溶剂冲刷",
+      "watchouts": "酸味过重往往不是豆子本身太酸，而是萃取不足导致中段甜感物质尚未充分析出",
+      "confidence": "verified",
+      "anchors": [
+        {
+          "kind": "snippet",
+          "label": "金杯萃取核心恒等式",
+          "content": "EY(%) = (液重 Beverage Mass × 浓度 TDS%) / 干粉重 Dose Mass"
+        }
+      ],
+      "deepDive": {
+        "hoverHint": "深究浓度（TDS）与萃取率（EY）如何共同映射感官风味象限",
+        "askPrompts": [
+          {
+            "title": "辨析「浓淡（TDS）」与「过萃/欠萃（EY）」的独立调节手法",
+            "prompt": "当一杯意式浓缩喝起来口感偏薄（TDS 偏低）但已经出现尾段干涩（EY 偏高）时，应该如何同时调整研磨度与粉液比（Brew Ratio）来提高醇厚度并消除干涩感？"
+          }
+        ],
+        "subAtlasPrompt": "使用 Atlas Loop 递归生成 L1 专题子地图，目标：「意式金杯控制图（TDS vs EY）与感官纠偏矩阵」，父级地图 espresso-extraction-atlas.html"
+      }
+    },
+    {
+      "id": "n-balance",
+      "streamIds": ["stream-hydro", "stream-solubles"],
+      "role": "outcome",
+      "title": "金杯感官平衡（18%–22% EY · 8%–12% TDS）",
+      "summary": "均匀渗流叠加恰当截断比，实现酸甜苦协调与绵密油脂触感",
+      "whyItMatters": "将经验主义调磨转化为可量化、可复现的因果调参闭环",
+      "keyFactors": {
+        "inputs": "稳定的无通道渗流 + 匹配烘焙度的粉液比（常见 1:1.8–1:2.5）",
+        "outputs": "风味干净、甜感饱满、余韵持久的出品"
+      },
+      "mechanismsAndEffects": "每次只改变单一变量（优先固定粉重与水温，先调研磨稳流速，再微调液重定酸甜比）",
+      "watchouts": "折射仪数值仅为辅助锚点，最终风味须结合豆种处理法与品饮偏好综合裁定",
+      "confidence": "verified",
+      "anchors": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "n-grind",
+      "target": "n-puck-prep",
+      "label": "设定初始粒径与孔隙骨架"
+    },
+    {
+      "id": "e2",
+      "source": "n-puck-prep",
+      "target": "n-channel-branch",
+      "label": "升压至 6–9 bar 考验粉床均质度"
+    },
+    {
+      "id": "e3",
+      "source": "n-grind",
+      "target": "n-solubility",
+      "label": "决定固液接触比表面积"
+    },
+    {
+      "id": "e4",
+      "source": "n-channel-branch",
+      "target": "n-balance",
+      "label": "均匀层流保障全区域同步萃取"
+    },
+    {
+      "id": "e5",
+      "source": "n-solubility",
+      "target": "n-balance",
+      "label": "按目标粉液比精准截断出液"
+    }
+  ]
+}
