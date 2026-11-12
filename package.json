@@ -1,0 +1,42 @@
+{
+  "name": "@liduchuan/atlas-loop",
+  "version": "0.1.0",
+  "description": "Universal recursive learning-map Agent Skill — dissect any unfamiliar subject into a standalone offline interactive HTML atlas with per-node deep-dive and recursive sub-atlas prompts.",
+  "type": "module",
+  "license": "MIT",
+  "author": "liduchuan",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liduchuan/Atlas-Loop.git"
+  },
+  "homepage": "https://github.com/liduchuan/Atlas-Loop#readme",
+  "bugs": {
+    "url": "https://github.com/liduchuan/Atlas-Loop/issues"
+  },
+  "bin": {
+    "atlas-loop": "bin/atlas-loop.mjs"
+  },
+  "files": [
+    "SKILL.md",
+    "README.md",
+    "assets",
+    "references",
+    "scripts",
+    "bin"
+  ],
+  "keywords": [
+    "agent-skill",
+    "skills",
+    "learning-map",
+    "knowledge-graph",
+    "interactive-map",
+    "react-flow",
+    "atlas-loop"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

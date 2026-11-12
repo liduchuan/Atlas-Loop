@@ -1,4 +1,4 @@
-# AtlasLoop
+# AtlasLoop (`@liduchuan/atlas-loop`)
 
 A universal recursive learning-map Agent Skill that dissects **any unfamiliar subject**—a scientific concept, craft, business model, book, software tool, or codebase—into a **standalone, zero-CDN offline interactive HTML atlas**, complete with per-node `?` follow-up and recursive sub-atlas prompts.
 
@@ -25,10 +25,61 @@ Learners tackling an unfamiliar topic usually hit two walls: **getting lost in f
 - **Software & CLI Tools**: User-intent workflows, key flags/configs, command compositions, and troubleshooting branches
 - **System Architecture & Codebases**: End-to-end business flows, internal call chains, state transitions, and one-click editor jumps to verified local file lines
 
+## Installation
+
+### Via `skills` CLI or `npx`
+
+```bash
+# Install with the universal Agent Skills CLI
+npx skills add @liduchuan/atlas-loop
+
+# Or install directly via the bundled CLI (defaults to ~/.agents/skills/atlas-loop)
+npx @liduchuan/atlas-loop install
+
+# Or specify any custom skills directory
+npx @liduchuan/atlas-loop install --dir /path/to/skills
+```
+
+### Via Git
+
+```bash
+git clone https://github.com/liduchuan/Atlas-Loop.git ~/.agents/skills/atlas-loop
+```
+
+## Example Prompts
+
+- **L0 Overview**:
+  - `Use AtlasLoop to map out the core argument structure of Thinking, Fast and Slow`
+  - `Use AtlasLoop to explain how Kubernetes Pod networking works`
+  - `Use AtlasLoop to generate an interactive learning map for this project`
+- **L1+ Recursive Deep Dive**:
+  - Open the generated `.html` file → click `?` on any core node → switch to **Recursive Sub-Atlas Prompt**, copy, and send it to your agent to generate a linked child atlas.
+
+## CLI Usage
+
+The agent invokes the bundled synthesis and verification tools automatically inside `/tmp` without touching your working tree. You can also run them directly via `npx`:
+
+```bash
+# 1. Validate AtlasGraphData JSON and synthesize a standalone offline HTML file
+npx @liduchuan/atlas-loop build --data /tmp/graph-data.json --out ./topic-atlas.html
+
+# 2. Run headless Playwright assertions (layout, lock/drag, Fit View vs Reset, ? prompts)
+npx @liduchuan/atlas-loop verify --html ./topic-atlas.html
+```
+
+Canvas semantics enforced by verification:
+
+- **Fit View**: Adjusts viewport pan/zoom only—preserves user-dragged node positions and active stream filters.
+- **Reset**: Dedicated button that restores initial Dagre coordinates, initial viewport, collapsed defaults, and all-streams view while clearing search and modals.
+- **Lock Nodes**: Prevents accidental node dragging while keeping pan, zoom, node inspection, and `?` prompt copying active.
+
 ## Repository Layout
 
 ```text
 Atlas-Loop/
+├── package.json              # @liduchuan/atlas-loop package manifest
+├── bin/
+│   └── atlas-loop.mjs        # npx CLI (install, build, verify)
 ├── SKILL.md                  # Trigger rules, language sniffing, grounding rules, and execution workflow
 ├── references/
 │   └── schema.md             # AtlasGraphData v2 JSON schema and polymorphic anchor specification
@@ -39,41 +90,6 @@ Atlas-Loop/
     └── verify_atlas.mjs      # Isolated /tmp headless Playwright verification suite
 ```
 
-## Installation & Usage
+## License
 
-### 1. Install the Skill
-
-**Enconvo**
-
-```bash
-git clone https://github.com/liduchuan/Atlas-Loop.git ~/.enconvo/skills/atlas-loop
-```
-
-*(For Claude Code, Codex, or other `SKILL.md`-compatible agents, clone into the corresponding `skills/atlas-loop` directory.)*
-
-### 2. Example Prompts
-
-- **L0 Overview**:
-  - `Use AtlasLoop to map out the core argument structure of Thinking, Fast and Slow`
-  - `Use AtlasLoop to explain how Kubernetes Pod networking works`
-  - `Use AtlasLoop to generate an interactive learning map for this project`
-- **L1+ Recursive Deep Dive**:
-  - Open the generated `.html` file → click `?` on any core node → switch to **Recursive Sub-Atlas Prompt**, copy, and send it to your agent to generate a linked child atlas.
-
-## CLI Scripts
-
-The agent runs these scripts automatically inside `/tmp` without touching your working tree, and you can also invoke them directly:
-
-```bash
-# 1. Validate AtlasGraphData JSON and synthesize a standalone offline HTML file
-node scripts/build_atlas.mjs --data /tmp/graph-data.json --out ./topic-atlas.html
-
-# 2. Run headless Playwright assertions (layout, lock/drag, Fit View vs Reset, ? prompts)
-node scripts/verify_atlas.mjs --html ./topic-atlas.html
-```
-
-Canvas semantics enforced by verification:
-
-- **Fit View**: Adjusts viewport pan/zoom only—preserves user-dragged node positions and active stream filters.
-- **Reset**: Dedicated button that restores initial Dagre coordinates, initial viewport, collapsed defaults, and all-streams view while clearing search and modals.
-- **Lock Nodes**: Prevents accidental node dragging while keeping pan, zoom, node inspection, and `?` prompt copying active.
+MIT
