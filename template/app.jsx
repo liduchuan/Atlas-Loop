@@ -8,9 +8,13 @@ import {
   Handle,
   Position,
   MarkerType,
+  BaseEdge,
+  EdgeLabelRenderer,
+  getBezierPath,
   useNodesState,
   useEdgesState,
   useReactFlow,
+  useStore,
 } from '@xyflow/react';
 import dagre from '@dagrejs/dagre';
 
@@ -177,17 +181,84 @@ function IconSearch() {
   );
 }
 
+function StrokeIcon({ size = 14, children }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {children}
+    </svg>
+  );
+}
+
+function IconZoomIn() {
+  return (
+    <StrokeIcon>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </StrokeIcon>
+  );
+}
+
+function IconZoomOut() {
+  return (
+    <StrokeIcon>
+      <path d="M5 12h14" />
+    </StrokeIcon>
+  );
+}
+
 function IconLock({ locked }) {
   return locked ? (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+    <StrokeIcon>
+      <rect width="18" height="11" x="3" y="11" rx="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
+    </StrokeIcon>
   ) : (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+    <StrokeIcon>
+      <rect width="18" height="11" x="3" y="11" rx="2" />
       <path d="M7 11V7a5 5 0 0 1 9.9-1" />
-    </svg>
+    </StrokeIcon>
+  );
+}
+
+function IconFit() {
+  return (
+    <StrokeIcon>
+      <path d="M8 3H5a2 2 0 0 0-2 2v3" />
+      <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+      <path d="M21 16v3a2 2 0 0 1-2 2h-3" />
+      <path d="M3 16v3a2 2 0 0 0 2 2h3" />
+    </StrokeIcon>
+  );
+}
+
+function IconReset() {
+  return (
+    <StrokeIcon>
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+      <path d="M3 3v5h5" />
+    </StrokeIcon>
+  );
+}
+
+function IconLegend() {
+  return (
+    <StrokeIcon>
+      <circle cx="5" cy="6" r="1.4" fill="currentColor" stroke="none" />
+      <path d="M10 6h10" />
+      <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <path d="M10 12h10" />
+      <circle cx="5" cy="18" r="1.4" fill="currentColor" stroke="none" />
+      <path d="M10 18h7" />
+    </StrokeIcon>
+  );
+}
+
+function IconDeepDive() {
+  return (
+    <StrokeIcon size={13}>
+      <path d="m15 10 5 5-5 5" />
+      <path d="M4 4v7a4 4 0 0 0 4 4h12" />
+    </StrokeIcon>
   );
 }
 
@@ -311,11 +382,9 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
             id: bridgeId,
             source: n.id,
             target: subFlowId,
+            type: 'atlasEdge',
             label: t.detailEdgeLabel,
             style: { stroke: '#71717a', strokeWidth: 1.4, strokeDasharray: '4 4' },
-            labelStyle: { fill: '#52525b', fontSize: 10.5, fontWeight: 500 },
-            labelBgStyle: { fill: '#fafafa', fillOpacity: 0.94 },
-            labelBgPadding: [5, 2],
             markerEnd: { type: MarkerType.ArrowClosed, color: '#71717a' },
           });
         }
@@ -330,11 +399,9 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
           id: `subedge::${n.id}::${se.id || idx}`,
           source: sId,
           target: tId,
+          type: 'atlasEdge',
           label: se.label || '',
           style: { stroke: '#a1a1aa', strokeWidth: 1.4 },
-          labelStyle: { fill: '#52525b', fontSize: 10.5, fontWeight: 500 },
-          labelBgStyle: { fill: '#ffffff', fillOpacity: 0.94 },
-          labelBgPadding: [5, 2],
           markerEnd: { type: MarkerType.ArrowClosed, color: '#a1a1aa' },
         });
       }
@@ -349,12 +416,9 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
       id: e.id || `edge-${idx}`,
       source: e.source,
       target: e.target,
+      type: 'atlasEdge',
       label: e.label || '',
       style: { stroke: '#71717a', strokeWidth: 1.5 },
-      labelStyle: { fill: '#27272a', fontSize: 11, fontWeight: 500 },
-      labelBgStyle: { fill: '#ffffff', fillOpacity: 0.95 },
-      labelBgPadding: [6, 3],
-      labelBgBorderRadius: 4,
       markerEnd: { type: MarkerType.ArrowClosed, color: '#71717a' },
     });
   }
@@ -433,7 +497,7 @@ function AtlasNode({ id, data, selected }) {
                 });
               }}
             >
-              ?
+              <IconDeepDive />
             </button>
             {hoveredHelp && (
               <div role="tooltip" data-testid="deep-dive-tooltip" className="atlas-help-tooltip">
@@ -482,6 +546,112 @@ function AtlasNode({ id, data, selected }) {
 }
 
 const NODE_TYPES = { atlasNode: AtlasNode };
+
+function nodeBox(node) {
+  const abs = node.internals?.positionAbsolute;
+  if (!abs) return null;
+  const w = node.measured?.width || node.width || node.style?.width || 0;
+  const h = node.measured?.height || node.height || node.style?.height || node.style?.minHeight || 0;
+  if (w <= 0 || h <= 0) return null;
+  return { left: abs.x, right: abs.x + w, top: abs.y, bottom: abs.y + h };
+}
+
+// 标签是水平居中的。宽度取它到周围节点的水平空隙，节点一动就重算。
+function edgeLabelMaxWidth(nodeLookup, labelX, labelY) {
+  const band = 20;
+  const gap = 8;
+  let half = Infinity;
+  let sawNode = false;
+  for (const node of nodeLookup.values()) {
+    const box = nodeBox(node);
+    if (!box) continue;
+    sawNode = true;
+    const overlapsY = labelY + band / 2 > box.top && labelY - band / 2 < box.bottom;
+    if (!overlapsY) continue;
+    if (box.right + gap <= labelX) half = Math.min(half, labelX - box.right - gap);
+    else if (box.left - gap >= labelX) half = Math.min(half, box.left - labelX - gap);
+    else half = 0;
+  }
+  if (!sawNode) return null;
+  if (!Number.isFinite(half) || half <= 0) return 0;
+  return Math.floor(half * 2);
+}
+
+function useEdgeLabelMaxWidth(labelX, labelY) {
+  return useStore((state) => edgeLabelMaxWidth(state.nodeLookup, labelX, labelY));
+}
+
+function AtlasEdgeLabel({ text, x, y, maxWidth }) {
+  const textRef = useRef(null);
+  const [truncated, setTruncated] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const el = textRef.current;
+    if (!el) return;
+    setTruncated(el.scrollWidth > el.clientWidth + 1);
+  }, [text, maxWidth]);
+
+  return (
+    <EdgeLabelRenderer>
+      <div
+        className="atlas-edge-label nopan"
+        style={{
+          transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`,
+          maxWidth: maxWidth == null ? undefined : maxWidth,
+        }}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+      >
+        <span ref={textRef} className="atlas-edge-label-text" data-testid="edge-label" title={truncated ? text : undefined}>
+          {text}
+        </span>
+        {open && truncated && (
+          <div className={`atlas-edge-label-tip ${y < 56 ? 'below' : ''}`} role="tooltip">
+            {text}
+          </div>
+        )}
+      </div>
+    </EdgeLabelRenderer>
+  );
+}
+
+function AtlasEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  style,
+  markerEnd,
+  label,
+}) {
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
+  const text = typeof label === 'string' ? label.trim() : '';
+  const maxWidth = useEdgeLabelMaxWidth(labelX, labelY);
+
+  return (
+    <>
+      <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} interactionWidth={16} />
+      {text && maxWidth !== 0 && (
+        <AtlasEdgeLabel text={text} x={labelX} y={labelY} maxWidth={maxWidth} />
+      )}
+    </>
+  );
+}
+
+const EDGE_TYPES = { atlasEdge: AtlasEdge };
 
 function CopyButton({ text, label, copiedLabel, testId = 'btn-copy-prompt', small = false }) {
   const [copied, setCopied] = useState(false);
@@ -725,7 +895,7 @@ function AtlasCanvasApp({ data }) {
 
   const [activeStream, setActiveStream] = useState('all');
   const [expandedIds, setExpandedIds] = useState(() => new Set());
-  const [isLocked, setIsLocked] = useState(false);
+  const [isLocked, setIsLocked] = useState(true);
   const [showLegend, setShowLegend] = useState(false);
   const [showScopeModal, setShowScopeModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -818,7 +988,7 @@ function AtlasCanvasApp({ data }) {
     setSelectedId(null);
     setDeepDiveTarget(null);
     setShowScopeModal(false);
-    setIsLocked(false);
+    setIsLocked(true);
     setResetEpoch((c) => c + 1);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -1022,7 +1192,7 @@ function AtlasCanvasApp({ data }) {
                       })
                     }
                   >
-                    ?
+                    <IconDeepDive />
                   </button>
                 )}
               </div>
@@ -1081,55 +1251,64 @@ function AtlasCanvasApp({ data }) {
               type="button"
               data-testid="btn-zoom-in"
               aria-label={t.zoomIn}
+              title={t.zoomIn}
               className="atlas-ctrl-btn"
               onClick={() => rf.zoomIn({ duration: 0 })}
             >
-              + {t.zoomIn}
+              <IconZoomIn />
             </button>
             <button
               type="button"
               data-testid="btn-zoom-out"
               aria-label={t.zoomOut}
+              title={t.zoomOut}
               className="atlas-ctrl-btn"
               onClick={() => rf.zoomOut({ duration: 0 })}
             >
-              − {t.zoomOut}
+              <IconZoomOut />
             </button>
             <button
               type="button"
               data-testid="btn-lock"
               data-locked={isLocked ? 'true' : 'false'}
               aria-pressed={isLocked}
+              aria-label={isLocked ? t.unlock : t.lock}
+              title={isLocked ? t.unlock : t.lock}
               className={`atlas-ctrl-btn ${isLocked ? 'locked' : ''}`}
               onClick={() => setIsLocked((v) => !v)}
             >
               <IconLock locked={isLocked} />
-              <span>{isLocked ? t.unlock : t.lock}</span>
             </button>
             <button
               type="button"
               data-testid="btn-fit-view"
+              aria-label={t.fitView}
+              title={t.fitView}
               className="atlas-ctrl-btn"
               onClick={handleFitViewOnly}
             >
-              {t.fitView}
+              <IconFit />
             </button>
             <button
               type="button"
               data-testid="btn-reset"
+              aria-label={t.reset}
+              title={t.reset}
               className="atlas-ctrl-btn"
               onClick={handleFullReset}
             >
-              {t.reset}
+              <IconReset />
             </button>
             <button
               type="button"
               data-testid="btn-legend"
               aria-pressed={showLegend}
+              aria-label={t.legend}
+              title={t.legend}
               className={`atlas-ctrl-btn ${showLegend ? 'active' : ''}`}
               onClick={() => setShowLegend((v) => !v)}
             >
-              {t.legend}
+              <IconLegend />
             </button>
           </div>
         </div>
@@ -1167,6 +1346,7 @@ function AtlasCanvasApp({ data }) {
             nodes={nodes}
             edges={edges}
             nodeTypes={NODE_TYPES}
+            edgeTypes={EDGE_TYPES}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeClick={(_, node) => setSelectedId(node.id)}

@@ -216,7 +216,7 @@ function validateAndEnrich(data) {
   }
 
   if (deepDiveNodeCount === 0) {
-    errors.push('至少要有一个核心节点提供 deepDive 提示（? 循环提示）');
+    errors.push('至少要有一个核心节点提供 deepDive 提示（↳ 循环提示）');
   }
 
   for (const s of streams) {

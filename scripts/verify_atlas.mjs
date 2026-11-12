@@ -195,6 +195,26 @@ async function main() {
     );
     checks.edgesRendered = initialEdgeCount;
 
+    const labelOverlap = await page.evaluate(() => {
+      const pad = 1;
+      const labels = [...document.querySelectorAll('[data-testid="edge-label"]')];
+      const nodes = [...document.querySelectorAll('.react-flow__node')];
+      let hits = 0;
+      for (const label of labels) {
+        const l = label.getBoundingClientRect();
+        if (l.width < 2 || l.height < 2) continue;
+        for (const node of nodes) {
+          const n = node.getBoundingClientRect();
+          const overlapX = l.left < n.right - pad && l.right > n.left + pad;
+          const overlapY = l.top < n.bottom - pad && l.bottom > n.top + pad;
+          if (overlapX && overlapY) hits += 1;
+        }
+      }
+      return { hits, labelCount: labels.length };
+    });
+    assert(labelOverlap.labelCount > 0, '连线没有渲染关系说明');
+    assert(labelOverlap.hits === 0, `有 ${labelOverlap.hits} 处关系说明被节点盖住`);
+
     const getViewportTransform = () =>
       page.evaluate(() => document.querySelector('.react-flow__viewport')?.style.transform || '');
 
@@ -220,16 +240,15 @@ async function main() {
     await page.click('[data-testid="btn-reset"]');
     await page.waitForTimeout(80);
 
-    // 4. 锁定与解锁状态下的节点拖拽
+    // 4. 画布默认锁定；解锁后才允许拖拽节点
     const firstNode = page.locator('.react-flow__node').first();
     const getFirstNodeTransform = () =>
       firstNode.evaluate((el) => el.style.transform);
 
     const beforeLockDrag = await getFirstNodeTransform();
-    await page.click('[data-testid="btn-lock"]');
     assert(
       (await page.locator('[data-testid="btn-lock"]').getAttribute('data-locked')) === 'true',
-      '锁定状态属性未设置'
+      '画布默认应锁定节点拖拽'
     );
 
     const lockedBox = await firstNode.boundingBox();
@@ -299,8 +318,10 @@ async function main() {
       checks.detailDrillDown = true;
     }
 
-    // 7. 「?」深入探究：悬停提示、点击弹窗与复制按钮
+    // 7. 「↳」深入探究：图标徽标、悬停提示、点击弹窗与复制按钮
     const helpBtn = page.locator('[data-testid="node-deep-dive-btn"]').first();
+    assert((await helpBtn.locator('svg').count()) === 1, '深入探究徽标应为图标');
+    assert(((await helpBtn.textContent()) || '').trim() === '', '深入探究徽标不应使用文字符号');
     await helpBtn.hover();
     await page.waitForSelector('[data-testid="deep-dive-tooltip"]', { timeout: 3000 });
     await helpBtn.click();
@@ -350,6 +371,10 @@ async function main() {
     assert(
       afterFullResetTransform === beforeLockDrag,
       `Reset 没有恢复节点的初始位置（${afterFullResetTransform} vs ${beforeLockDrag}）`
+    );
+    assert(
+      (await page.locator('[data-testid="btn-lock"]').getAttribute('data-locked')) === 'true',
+      'Reset 没有恢复默认锁定'
     );
     const edgesAfterReset = await countEdges();
     assert(
