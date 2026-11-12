@@ -1,0 +1,109 @@
+{
+  "schemaVersion": "2.0",
+  "meta": {
+    "title": "番茄工作法（Pomodoro Technique）",
+    "subtitle": "用固定的时间盒对抗拖延与注意力涣散",
+    "subjectTag": "时间管理 / 方法",
+    "language": "zh-CN",
+    "generatedByModel": "Atlas Loop Preview",
+    "level": 0,
+    "complexity": "simple",
+    "complexityReason": "只有一个循环机制，一条因果链即可讲清，没有相互作用的子系统",
+    "drillDownTarget": null,
+    "parentMapHtml": null,
+    "uncoveredScopes": [],
+    "unverifiedNotes": []
+  },
+  "streams": [
+    {
+      "id": "stream-cycle",
+      "title": "一个番茄钟的循环",
+      "summary": "从选定任务到长休息的完整一轮",
+      "learningOrder": ["n-task", "n-focus", "n-break", "n-long-break"]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n-task",
+      "streamIds": ["stream-cycle"],
+      "role": "entry",
+      "title": "选定一件要做的事",
+      "summary": "开始前只挑一个任务并写下来，其余的先放进待办清单",
+      "whyItMatters": "启动阻力往往来自不知道先做哪件，单一目标把决策成本降到最低",
+      "confidence": "verified",
+      "anchors": []
+    },
+    {
+      "id": "n-focus",
+      "streamIds": ["stream-cycle"],
+      "role": "core",
+      "title": "25 分钟不被打断的专注",
+      "summary": "定时器响了才停；中途冒出的念头记到纸上，不立刻处理",
+      "watchouts": "番茄钟不可分割：被打断后这一轮作废重来，而不是暂停后接着算",
+      "confidence": "verified",
+      "anchors": [
+        {
+          "kind": "snippet",
+          "label": "标准节奏",
+          "content": "25 分钟专注 → 5 分钟休息 ×4 → 15–30 分钟长休息"
+        }
+      ],
+      "deepDive": {
+        "hoverHint": "为什么是 25 分钟，而不是 50 或 90？",
+        "askPrompts": [
+          {
+            "title": "时间盒长度如何影响启动阻力与专注质量",
+            "prompt": "番茄工作法把专注时段定为 25 分钟。请从启动阻力、注意力衰减和任务切换成本三个角度分析：对于写作、编程这类需要较长时间进入状态的深度工作，把时段拉长到 50 或 90 分钟会带来什么得失？"
+          }
+        ],
+        "subAtlasPrompt": "使用 Atlas Loop 递归生成 L1 专题子地图，目标：「专注时段长度与注意力衰减」，父级地图 pomodoro-atlas.html"
+      }
+    },
+    {
+      "id": "n-break",
+      "streamIds": ["stream-cycle"],
+      "role": "foundation",
+      "title": "5 分钟短休息",
+      "summary": "离开屏幕，站起来走动，不处理任何需要动脑的事",
+      "whyItMatters": "休息让下一轮专注可以持续，而不是越做越涣散",
+      "confidence": "verified",
+      "anchors": []
+    },
+    {
+      "id": "n-long-break",
+      "streamIds": ["stream-cycle"],
+      "role": "outcome",
+      "title": "四个番茄后长休息",
+      "summary": "连续完成四个番茄钟后休息 15–30 分钟，再开始下一组",
+      "whyItMatters": "用完成的番茄数衡量一天的产出，对任务耗时的估计也会越来越准",
+      "confidence": "verified",
+      "anchors": [
+        {
+          "kind": "source",
+          "label": "出处",
+          "citation": "Francesco Cirillo, The Pomodoro Technique"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "n-task",
+      "target": "n-focus",
+      "label": "启动定时器"
+    },
+    {
+      "id": "e2",
+      "source": "n-focus",
+      "target": "n-break",
+      "label": "铃响即停"
+    },
+    {
+      "id": "e3",
+      "source": "n-break",
+      "target": "n-long-break",
+      "label": "累计满四轮（未满则回到专注）"
+    }
+  ]
+}

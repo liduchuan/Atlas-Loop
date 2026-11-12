@@ -20,17 +20,17 @@ function readVersion() {
 function printHelp() {
   console.log(`Atlas Loop (@liduchuan/atlas-loop v${readVersion()})
 
-Usage:
+用法：
   npx @liduchuan/atlas-loop install [--dir <skills-dir>]
   npx @liduchuan/atlas-loop dev [--port 5179] [--data <graph-data.json>]
   npx @liduchuan/atlas-loop build --data <graph-data.json> [--out <output.html>]
   npx @liduchuan/atlas-loop verify --html <output.html>
 
-Commands:
-  install   Copy the atlas-loop skill into an Agent skills directory (default: ~/.agents/skills/atlas-loop)
-  dev       Launch the local live-reload runtime for template & style debugging
-  build     Validate AtlasGraphData JSON and synthesize a standalone offline HTML learning map
-  verify    Run headless Playwright verification against a generated HTML learning map
+命令：
+  install   将 atlas-loop skill 复制到 Agent skills 目录（默认：~/.agents/skills/atlas-loop）
+  dev       启动本地实时重载运行时，用于调试模板与样式
+  build     校验 AtlasGraphData JSON 并合成独立的离线 HTML 学习地图
+  verify    对生成的 HTML 学习地图运行无头 Playwright 验证
 `);
 }
 
@@ -78,7 +78,7 @@ if (cmd === '-v' || cmd === '--version' || cmd === 'version') {
 if (cmd === 'install') {
   const dest = resolveInstallDir(argv.slice(1));
   copySkillFiles(dest);
-  console.log(`Installed Atlas Loop skill to: ${dest}`);
+  console.log(`已将 Atlas Loop skill 安装到：${dest}`);
   process.exit(0);
 }
 
@@ -94,6 +94,6 @@ if (cmd === 'verify') {
   runNodeFile(path.join('scripts', 'verify_atlas.mjs'), argv.slice(1));
 }
 
-console.error(`Unknown command: ${cmd}\n`);
+console.error(`未知命令：${cmd}\n`);
 printHelp();
 process.exit(1);

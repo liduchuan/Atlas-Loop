@@ -107,7 +107,7 @@ input:focus-visible {
   padding-right: env(safe-area-inset-right);
 }
 
-/* Top Header */
+/* 顶部页头 */
 .atlas-topbar {
   display: flex;
   justify-content: space-between;
@@ -223,7 +223,7 @@ input:focus-visible {
   background: var(--bg-subtle);
 }
 
-/* Toolbar */
+/* 工具栏 */
 .atlas-toolbar-row {
   display: flex;
   justify-content: space-between;
@@ -283,6 +283,14 @@ input:focus-visible {
   background: var(--bg-active);
   color: var(--text-inverse);
   border-color: var(--bg-active);
+}
+
+/* 只有一条脉络时无需过滤：脉络名作为静态标签显示 */
+.atlas-stream-pill.static,
+.atlas-stream-pill.static:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: default;
 }
 
 .atlas-stream-help-btn {
@@ -449,7 +457,7 @@ input:focus-visible {
   border-color: var(--bg-active);
 }
 
-/* Recommended Learning Path */
+/* 推荐学习路径 */
 .atlas-reading-bar {
   display: flex;
   align-items: center;
@@ -523,7 +531,7 @@ input:focus-visible {
   color: var(--text-inverse);
 }
 
-/* Workspace & Canvas */
+/* 工作区与画布 */
 .atlas-main-workspace {
   flex: 1;
   min-height: 0;
@@ -540,7 +548,7 @@ input:focus-visible {
   background: var(--bg-canvas);
 }
 
-/* Node Card — Restrained Architectural Style */
+/* 节点卡片 —— 克制的建筑感风格 */
 .react-flow__node-atlasNode {
   border-radius: var(--radius-lg) !important;
   box-shadow: none !important;
@@ -762,7 +770,7 @@ input:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-/* Legend */
+/* 图例 */
 .atlas-legend-card {
   position: absolute;
   top: 12px;
@@ -792,7 +800,7 @@ input:focus-visible {
   border-radius: 50%;
 }
 
-/* Right Inspector Drawer */
+/* 右侧检视抽屉 */
 .atlas-inspector {
   width: 380px;
   max-width: 44vw;
@@ -1005,7 +1013,7 @@ input:focus-visible {
   background: var(--bg-hover);
 }
 
-/* Modal */
+/* 弹窗 */
 .atlas-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1163,7 +1171,7 @@ input:focus-visible {
   color: var(--text-secondary);
 }
 
-/* React Flow Overrides for Clean Restraint */
+/* 覆盖 React Flow 默认样式，保持简洁克制 */
 .react-flow__edge-textbg {
   rx: 4;
   ry: 4;

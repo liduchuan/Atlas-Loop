@@ -24,6 +24,13 @@ const SECRET_PATTERNS = [
   /\bAKIA[0-9A-Z]{16}\b/,
 ];
 
+// 各复杂度档位的地图规模预算：顶层节点与脉络的上限，以及低于多少节点时提示下调档位
+const COMPLEXITY_BUDGETS = {
+  simple: { maxNodes: 6, maxStreams: 1, minNodes: 0 },
+  moderate: { maxNodes: 12, maxStreams: 3, minNodes: 5 },
+  complex: { maxNodes: 20, maxStreams: 5, minNodes: 8 },
+};
+
 function parseArgs(argv) {
   const args = {};
   for (let i = 2; i < argv.length; i++) {
@@ -68,22 +75,61 @@ function escapeHtml(s) {
 
 function validateAndEnrich(data) {
   const errors = [];
+  const warnings = [];
   if (!data || typeof data !== 'object') {
-    throw new Error('Graph data must be a JSON object.');
+    throw new Error('图数据必须是 JSON 对象。');
   }
   const meta = data.meta || {};
-  if (!meta.title || typeof meta.title !== 'string') errors.push('Missing meta.title');
-  if (!meta.language || typeof meta.language !== 'string') errors.push('Missing meta.language');
+  if (!meta.title || typeof meta.title !== 'string') errors.push('缺少 meta.title');
+  if (!meta.language || typeof meta.language !== 'string') errors.push('缺少 meta.language');
   if (!meta.generatedByModel || typeof meta.generatedByModel !== 'string') {
-    errors.push('Missing meta.generatedByModel (must carry the active model name)');
+    errors.push('缺少 meta.generatedByModel（必须填写当前模型名称）');
   }
 
   const streams = Array.isArray(data.streams) ? data.streams : [];
-  if (streams.length === 0) errors.push('At least one stream is required in data.streams');
+  if (streams.length === 0) errors.push('data.streams 中至少需要一条脉络');
   const streamIds = new Set(streams.map((s) => s.id));
 
   const nodes = Array.isArray(data.nodes) ? data.nodes : [];
-  if (nodes.length === 0) errors.push('At least one node is required in data.nodes');
+  if (nodes.length === 0) errors.push('data.nodes 中至少需要一个节点');
+
+  const budget = COMPLEXITY_BUDGETS[meta.complexity];
+  if (!budget) {
+    errors.push(
+      `缺少或无效的 meta.complexity "${meta.complexity}"，必须是以下之一：${Object.keys(COMPLEXITY_BUDGETS).join(', ')}（先评估主题复杂度，再决定地图规模）`
+    );
+  } else {
+    const tier = meta.complexity;
+    const overHint = '请删去不必要的内容，确有依据时再上调档位';
+    if (!meta.complexityReason || !String(meta.complexityReason).trim()) {
+      errors.push('缺少 meta.complexityReason（用一句话写明复杂度判断依据）');
+    }
+    if (nodes.length > budget.maxNodes) {
+      if (tier === 'complex') {
+        warnings.push(
+          `有 ${nodes.length} 个顶层节点（建议不超过 ${budget.maxNodes}）：把细节收进 detailGraph，或留给 L1+ 子图`
+        );
+      } else {
+        errors.push(
+          `meta.complexity 为 ${tier}，但有 ${nodes.length} 个顶层节点（上限 ${budget.maxNodes}）：${overHint}`
+        );
+      }
+    }
+    if (streams.length > budget.maxStreams) {
+      if (tier === 'complex') {
+        warnings.push(`有 ${streams.length} 条脉络（建议不超过 ${budget.maxStreams}）：合并相近的脉络`);
+      } else {
+        errors.push(
+          `meta.complexity 为 ${tier}，但有 ${streams.length} 条脉络（上限 ${budget.maxStreams}）：${overHint}`
+        );
+      }
+    }
+    if (nodes.length > 0 && nodes.length < budget.minNodes) {
+      warnings.push(
+        `meta.complexity 为 ${tier}，但只有 ${nodes.length} 个顶层节点：档位可能偏高，考虑下调`
+      );
+    }
+  }
 
   const nodeIds = new Set();
   let deepDiveNodeCount = 0;
@@ -93,23 +139,23 @@ function validateAndEnrich(data) {
     for (const anc of anchors) {
       if (!anc || typeof anc !== 'object') continue;
       if (!['editor', 'snippet', 'link', 'source'].includes(anc.kind)) {
-        errors.push(`${ownerLabel}: invalid anchor.kind "${anc.kind}"`);
+        errors.push(`${ownerLabel}：无效的 anchor.kind "${anc.kind}"`);
         continue;
       }
       if (anc.kind === 'editor') {
         if (!anc.absPath || !path.isAbsolute(anc.absPath)) {
-          errors.push(`${ownerLabel}: editor anchor requires verified absolute path in absPath`);
+          errors.push(`${ownerLabel}：editor 锚点的 absPath 必须是已验证的绝对路径`);
           continue;
         }
         if (!fs.existsSync(anc.absPath) || !fs.statSync(anc.absPath).isFile()) {
-          errors.push(`${ownerLabel}: editor anchor file does not exist: ${anc.absPath}`);
+          errors.push(`${ownerLabel}：editor 锚点指向的文件不存在：${anc.absPath}`);
           continue;
         }
         const totalLines = fs.readFileSync(anc.absPath, 'utf8').split(/\r?\n/).length;
         const lineNum = Number(anc.line || 1);
         if (lineNum < 1 || lineNum > totalLines) {
           errors.push(
-            `${ownerLabel}: editor anchor line ${lineNum} out of range (1..${totalLines}) for ${anc.absPath}`
+            `${ownerLabel}：editor 锚点行号 ${lineNum} 超出 ${anc.absPath} 的范围（1..${totalLines}）`
           );
           continue;
         }
@@ -117,37 +163,37 @@ function validateAndEnrich(data) {
         anc.editor = ed;
         anc.editorUri = encodeEditorUri(anc.absPath, lineNum, ed);
         if (anc.editorUri.startsWith('file://')) {
-          errors.push(`${ownerLabel}: plain file:// link is forbidden for editor jump`);
+          errors.push(`${ownerLabel}：编辑器跳转禁止使用裸 file:// 链接`);
         }
       }
     }
   };
 
   for (const n of nodes) {
-    if (!n.id) errors.push('Every node must have an id');
-    if (nodeIds.has(n.id)) errors.push(`Duplicate node id: ${n.id}`);
+    if (!n.id) errors.push('每个节点都必须有 id');
+    if (nodeIds.has(n.id)) errors.push(`节点 id 重复：${n.id}`);
     nodeIds.add(n.id);
 
-    if (!n.title) errors.push(`Node ${n.id}: missing title`);
+    if (!n.title) errors.push(`节点 ${n.id}：缺少 title`);
     if (!VALID_ROLES.has(n.role)) {
-      errors.push(`Node ${n.id}: invalid role "${n.role}". Must be one of ${[...VALID_ROLES].join(', ')}`);
+      errors.push(`节点 ${n.id}：无效的 role "${n.role}"，必须是以下之一：${[...VALID_ROLES].join(', ')}`);
     }
     if (!Array.isArray(n.streamIds) || n.streamIds.length === 0) {
-      errors.push(`Node ${n.id}: streamIds must reference at least one stream`);
+      errors.push(`节点 ${n.id}：streamIds 必须至少引用一条脉络`);
     } else {
       for (const sid of n.streamIds) {
-        if (!streamIds.has(sid)) errors.push(`Node ${n.id}: unknown streamId "${sid}"`);
+        if (!streamIds.has(sid)) errors.push(`节点 ${n.id}：未知的 streamId "${sid}"`);
       }
     }
 
-    verifyAnchors(n.anchors, `Node ${n.id}`);
+    verifyAnchors(n.anchors, `节点 ${n.id}`);
 
     if (n.deepDive) {
       const asks = Array.isArray(n.deepDive.askPrompts) ? n.deepDive.askPrompts : [];
       if (asks.length > 0 || n.deepDive.subAtlasPrompt) deepDiveNodeCount++;
       for (const ap of asks) {
         if (!ap.prompt || String(ap.prompt).trim().length < 20) {
-          errors.push(`Node ${n.id}: askPrompts must be specific, non-trivial questions (>= 20 chars)`);
+          errors.push(`节点 ${n.id}：askPrompts 必须是具体、有实质内容的问题（不少于 20 个字符）`);
         }
       }
     }
@@ -156,67 +202,67 @@ function validateAndEnrich(data) {
       const subNodes = Array.isArray(n.detailGraph.nodes) ? n.detailGraph.nodes : [];
       const subIds = new Set();
       for (const sn of subNodes) {
-        if (!sn.id || !sn.title) errors.push(`Node ${n.id} detailGraph subnode missing id/title`);
-        if (subIds.has(sn.id)) errors.push(`Node ${n.id} detailGraph duplicate subnode id "${sn.id}"`);
+        if (!sn.id || !sn.title) errors.push(`节点 ${n.id} 的 detailGraph 子节点缺少 id/title`);
+        if (subIds.has(sn.id)) errors.push(`节点 ${n.id} 的 detailGraph 子节点 id 重复："${sn.id}"`);
         subIds.add(sn.id);
-        verifyAnchors(sn.anchors, `Subnode ${n.id}::${sn.id}`);
+        verifyAnchors(sn.anchors, `子节点 ${n.id}::${sn.id}`);
       }
       for (const se of n.detailGraph.edges || []) {
         if (!subIds.has(se.source) || !subIds.has(se.target)) {
-          errors.push(`Node ${n.id} detailGraph edge references unknown subnode: ${se.source} -> ${se.target}`);
+          errors.push(`节点 ${n.id} 的 detailGraph 边引用了未知子节点：${se.source} -> ${se.target}`);
         }
       }
     }
   }
 
   if (deepDiveNodeCount === 0) {
-    errors.push('At least one core node must provide deepDive prompts (? Loop Prompts)');
+    errors.push('至少要有一个核心节点提供 deepDive 提示（? 循环提示）');
   }
 
   for (const s of streams) {
     for (const lid of s.learningOrder || []) {
       if (!nodeIds.has(lid)) {
-        errors.push(`Stream ${s.id}: learningOrder references unknown node "${lid}"`);
+        errors.push(`脉络 ${s.id}：learningOrder 引用了未知节点 "${lid}"`);
       }
     }
   }
 
   for (const e of data.edges || []) {
     if (!nodeIds.has(e.source) || !nodeIds.has(e.target)) {
-      errors.push(`Edge references unknown node: ${e.source} -> ${e.target}`);
+      errors.push(`边引用了未知节点：${e.source} -> ${e.target}`);
     }
     if (!e.label || !String(e.label).trim()) {
-      errors.push(`Edge ${e.source} -> ${e.target}: edge label is required to clarify relationship/branch`);
+      errors.push(`边 ${e.source} -> ${e.target}：必须填写 label，以说明关系或分支条件`);
     }
   }
 
   const rawJsonString = JSON.stringify(data);
   for (const pat of SECRET_PATTERNS) {
     if (pat.test(rawJsonString)) {
-      errors.push(`Security check failed: detected potential secret matching ${pat}`);
+      errors.push(`安全检查未通过：检测到疑似密钥，匹配 ${pat}`);
     }
   }
 
   if (errors.length > 0) {
-    throw new Error(`AtlasGraphData validation failed:\n- ${errors.join('\n- ')}`);
+    throw new Error(`AtlasGraphData 校验失败：\n- ${errors.join('\n- ')}`);
   }
 
-  return data;
+  return { data, warnings };
 }
 
 function main() {
   const args = parseArgs(process.argv);
   if (!args.data) {
-    console.error('Usage: node build_atlas.mjs --data <graph-data.json> [--out <output.html>]');
+    console.error('用法：node build_atlas.mjs --data <graph-data.json> [--out <output.html>]');
     process.exit(1);
   }
   if (!fs.existsSync(SHELL_PATH)) {
-    console.error(`Missing viewer shell template at ${SHELL_PATH}`);
+    console.error(`缺少查看器外壳模板：${SHELL_PATH}`);
     process.exit(1);
   }
 
   const raw = JSON.parse(fs.readFileSync(args.data, 'utf8'));
-  const validated = validateAndEnrich(raw);
+  const { data: validated, warnings } = validateAndEnrich(raw);
   const meta = validated.meta;
 
   let outPath = args.out;
@@ -251,6 +297,8 @@ function main() {
         bytes: fs.statSync(outPath).size,
         nodeCount: validated.nodes.length,
         streamCount: validated.streams.length,
+        complexity: meta.complexity,
+        ...(warnings.length > 0 ? { warnings } : {}),
       },
       null,
       2

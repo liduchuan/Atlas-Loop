@@ -76,17 +76,17 @@ function findLocalChromiumExecutable() {
 }
 
 function assert(cond, msg) {
-  if (!cond) throw new Error(`Assertion failed: ${msg}`);
+  if (!cond) throw new Error(`断言失败：${msg}`);
 }
 
 async function main() {
   const args = parseArgs(process.argv);
   if (!args.html) {
-    console.error('Usage: node verify_atlas.mjs --html <path-to-atlas.html>');
+    console.error('用法：node verify_atlas.mjs --html <atlas.html 的路径>');
     process.exit(1);
   }
   const htmlPath = path.resolve(args.html);
-  assert(fs.existsSync(htmlPath), `HTML file not found: ${htmlPath}`);
+  assert(fs.existsSync(htmlPath), `未找到 HTML 文件：${htmlPath}`);
 
   const pwEntry = ensurePlaywrightCore();
   const { chromium } = await import(pathToFileURL(pwEntry).href);
@@ -107,14 +107,47 @@ async function main() {
     await page.goto(pathToFileURL(htmlPath).href, { waitUntil: 'load' });
     await page.waitForSelector('[data-testid="atlas-node-card"]', { timeout: 8000 });
 
-    // 1. Model badge & zero page errors
+    // 1. 模型徽标与零页面错误
     const modelText = (await page.locator('[data-testid="model-badge"]').textContent()) || '';
-    assert(modelText.trim().length > 3, 'Model badge is empty');
+    assert(modelText.trim().length > 3, '模型徽标为空');
     checks.modelDisplayed = modelText.trim();
 
-    // 2. Non-zero canvas & non-overlapping initial overview nodes
+    // 复杂度：徽标与数据一致，简单地图收起搜索与小地图
+    const atlasMeta = await page.evaluate(() => {
+      const el = document.getElementById('atlas-data-json');
+      const d = el ? JSON.parse(el.textContent) : {};
+      return {
+        complexity: (d.meta && d.meta.complexity) || null,
+        nodeCount: Array.isArray(d.nodes) ? d.nodes.length : 0,
+        edgeCount: Array.isArray(d.edges) ? d.edges.length : 0,
+      };
+    });
+    const complexityShown = await page
+      .locator('[data-testid="complexity-badge"]')
+      .getAttribute('data-complexity');
+    assert(
+      ['simple', 'moderate', 'complex'].includes(complexityShown),
+      `复杂度徽标缺失或档位无效：${complexityShown}`
+    );
+    if (atlasMeta.complexity) {
+      assert(
+        complexityShown === atlasMeta.complexity,
+        `复杂度徽标（${complexityShown}）与 meta.complexity（${atlasMeta.complexity}）不一致`
+      );
+    }
+    const isCompact = complexityShown === 'simple';
+    const hasSearch = (await page.locator('[data-testid="search-input"]').count()) > 0;
+    const hasMiniMap = (await page.locator('.react-flow__minimap').count()) > 0;
+    assert(
+      isCompact ? !hasSearch && !hasMiniMap : hasSearch && hasMiniMap,
+      isCompact ? '简单地图没有收起搜索与小地图' : '非简单地图缺少搜索或小地图'
+    );
+    checks.complexity = complexityShown;
+    checks.compactChrome = isCompact;
+
+    // 2. 画布尺寸非零，且初始概览节点互不重叠
     const canvasBox = await page.locator('[data-testid="atlas-canvas-wrap"]').boundingBox();
-    assert(canvasBox && canvasBox.width > 400 && canvasBox.height > 300, 'Canvas bounding box invalid');
+    assert(canvasBox && canvasBox.width > 400 && canvasBox.height > 300, '画布包围盒无效');
 
     const initialPositions = await page.evaluate(() => {
       return Array.from(document.querySelectorAll('.react-flow__node')).map((el) => {
@@ -129,9 +162,13 @@ async function main() {
         };
       });
     });
-    assert(initialPositions.length > 0, 'No rendered React Flow nodes');
+    assert(initialPositions.length > 0, '没有渲染出任何 React Flow 节点');
+    assert(
+      initialPositions.length === atlasMeta.nodeCount,
+      `画布初始节点数（${initialPositions.length}）与数据中的顶层节点数（${atlasMeta.nodeCount}）不一致`
+    );
     for (const n of initialPositions) {
-      assert(n.w > 40 && n.h > 30, `Node ${n.id} rendered with zero/tiny size`);
+      assert(n.w > 40 && n.h > 30, `节点 ${n.id} 的渲染尺寸为零或过小`);
     }
     let severeOverlaps = 0;
     for (let i = 0; i < initialPositions.length; i++) {
@@ -145,19 +182,28 @@ async function main() {
         if (minArea > 0 && area / minArea > 0.25) severeOverlaps++;
       }
     }
-    assert(severeOverlaps === 0, `Detected ${severeOverlaps} overlapping node pairs`);
+    assert(severeOverlaps === 0, `检测到 ${severeOverlaps} 对节点重叠`);
     checks.initialNodeCount = initialPositions.length;
     checks.overlapFree = true;
+
+    // 连线：顶层边必须全部渲染出来
+    const countEdges = () => page.locator('.react-flow__edge').count();
+    const initialEdgeCount = await countEdges();
+    assert(
+      initialEdgeCount === atlasMeta.edgeCount,
+      `画布渲染出 ${initialEdgeCount} 条连线，数据中有 ${atlasMeta.edgeCount} 条顶层边`
+    );
+    checks.edgesRendered = initialEdgeCount;
 
     const getViewportTransform = () =>
       page.evaluate(() => document.querySelector('.react-flow__viewport')?.style.transform || '');
 
     const initialViewport = await getViewportTransform();
 
-    // 3. Zoom in / out & pan
+    // 3. 放大 / 缩小与平移
     await page.click('[data-testid="btn-zoom-in"]');
     const afterZoomIn = await getViewportTransform();
-    assert(afterZoomIn !== initialViewport, 'Zoom In did not change viewport transform');
+    assert(afterZoomIn !== initialViewport, '放大后视口 transform 没有变化');
 
     await page.click('[data-testid="btn-zoom-out"]');
 
@@ -167,14 +213,14 @@ async function main() {
     await page.mouse.move(paneBox.x + paneBox.width - 180, paneBox.y + paneBox.height - 140, { steps: 5 });
     await page.mouse.up();
     const afterPan = await getViewportTransform();
-    assert(afterPan !== afterZoomIn, 'Canvas pan did not change viewport transform');
+    assert(afterPan !== afterZoomIn, '平移画布后视口 transform 没有变化');
     checks.zoomAndPan = true;
 
-    // Reset before lock/drag test so nodes are cleanly centered in view
+    // 在锁定/拖拽测试前先重置，让节点整齐地居中于视口内
     await page.click('[data-testid="btn-reset"]');
     await page.waitForTimeout(80);
 
-    // 4. Lock vs Unlock node dragging
+    // 4. 锁定与解锁状态下的节点拖拽
     const firstNode = page.locator('.react-flow__node').first();
     const getFirstNodeTransform = () =>
       firstNode.evaluate((el) => el.style.transform);
@@ -183,7 +229,7 @@ async function main() {
     await page.click('[data-testid="btn-lock"]');
     assert(
       (await page.locator('[data-testid="btn-lock"]').getAttribute('data-locked')) === 'true',
-      'Lock state attribute not set'
+      '锁定状态属性未设置'
     );
 
     const lockedBox = await firstNode.boundingBox();
@@ -192,12 +238,12 @@ async function main() {
     await page.mouse.move(lockedBox.x + 150, lockedBox.y + 110, { steps: 6 });
     await page.mouse.up();
     const afterLockedDrag = await getFirstNodeTransform();
-    assert(afterLockedDrag === beforeLockDrag, 'Locked node moved when dragged!');
+    assert(afterLockedDrag === beforeLockDrag, '锁定状态下节点仍被拖动了！');
 
     await page.click('[data-testid="btn-lock"]');
     assert(
       (await page.locator('[data-testid="btn-lock"]').getAttribute('data-locked')) === 'false',
-      'Unlock state attribute not cleared'
+      '解锁后锁定状态属性未清除'
     );
     const unlockedBox = await firstNode.boundingBox();
     await page.mouse.move(unlockedBox.x + 40, unlockedBox.y + 24);
@@ -205,10 +251,10 @@ async function main() {
     await page.mouse.move(unlockedBox.x + 160, unlockedBox.y + 120, { steps: 8 });
     await page.mouse.up();
     const afterUnlockedDrag = await getFirstNodeTransform();
-    assert(afterUnlockedDrag !== beforeLockDrag, 'Unlocked node did not move when dragged!');
+    assert(afterUnlockedDrag !== beforeLockDrag, '解锁状态下拖拽节点没有移动！');
     checks.lockAndUnlock = true;
 
-    // 5. Fit View vs Reset strict semantics
+    // 5. Fit View 与 Reset 的严格语义区分
     const streamBtns = page.locator('[data-testid^="stream-btn-"]:not([data-testid="stream-btn-all"])');
     const streamBtnCount = await streamBtns.count();
     if (streamBtnCount > 1) {
@@ -228,31 +274,32 @@ async function main() {
     const viewportAfterFit = await getViewportTransform();
     assert(
       draggedTransformAfterFit === draggedTransformBeforeFit,
-      'Fit View erroneously reset dragged node coordinates!'
+      'Fit View 错误地重置了被拖拽节点的坐标！'
     );
     assert(
       viewportAfterFit.length > 0 && (viewportAfterFit !== viewportBeforeFit || initialPositions.length > 0),
-      'Fit View viewport check failed'
+      'Fit View 视口检查未通过'
     );
     if (streamBtnCount > 1) {
       assert(
         (await streamBtns.first().getAttribute('data-active')) === 'true',
-        'Fit View erroneously cleared active stream filter!'
+        'Fit View 错误地清除了当前的脉络过滤器！'
       );
     }
 
-    // 6. Expand detailGraph (if present) & Search
+    // 6. 展开 detailGraph（如有）与搜索
     const expandBtns = page.locator('[data-testid="node-expand-btn"]');
     if ((await expandBtns.count()) > 0) {
       const countBeforeExpand = await page.locator('.react-flow__node').count();
       await expandBtns.first().click();
       await page.waitForTimeout(80);
       const countAfterExpand = await page.locator('.react-flow__node').count();
-      assert(countAfterExpand > countBeforeExpand, 'Expanding detailGraph did not add detail sub-nodes');
+      assert(countAfterExpand > countBeforeExpand, '展开 detailGraph 后没有新增细节子节点');
+      assert((await countEdges()) > 0, '展开 detailGraph 后连线消失了');
       checks.detailDrillDown = true;
     }
 
-    // 7. "?" Deep Dive hover & click modal + copy button
+    // 7. 「?」深入探究：悬停提示、点击弹窗与复制按钮
     const helpBtn = page.locator('[data-testid="node-deep-dive-btn"]').first();
     await helpBtn.hover();
     await page.waitForSelector('[data-testid="deep-dive-tooltip"]', { timeout: 3000 });
@@ -260,48 +307,58 @@ async function main() {
     await page.waitForSelector('[data-testid="deep-dive-panel"]', { timeout: 3000 });
 
     const askPromptText = (await page.locator('[data-testid="ask-prompt-text"]').first().textContent()) || '';
-    assert(askPromptText.trim().length >= 20, 'Deep dive ask prompt text missing or trivial');
+    assert(askPromptText.trim().length >= 20, '深入探究的追问提示缺失或过于简单');
     await page.click('[data-testid="btn-copy-ask-0"]');
     await page.waitForTimeout(50);
     assert(
       (await page.locator('[data-testid="btn-copy-ask-0"]').getAttribute('data-copied')) === 'true',
-      'Copy button did not report copied state'
+      '复制按钮没有进入已复制状态'
     );
 
     const recTab = page.locator('[data-testid="tab-recursive-prompt"]');
     if ((await recTab.count()) > 0) {
       await recTab.click();
       const recText = (await page.locator('[data-testid="recursive-prompt-text"]').textContent()) || '';
-      assert(recText.trim().length > 10, 'Recursive sub-atlas prompt missing');
+      assert(recText.trim().length > 10, '缺少递归子图提示');
     }
     checks.deepDiveLoopPrompts = true;
 
-    // 8. Full Reset restores exact initial layout, closes modal, resets filter & expansion
+    // 8. 完整重置：精确恢复初始布局，关闭弹窗，重置过滤器与展开状态
     await page.click('[data-testid="btn-close-deep-dive"]');
-    await page.fill('[data-testid="search-input"]', 'a');
+    if (hasSearch) await page.fill('[data-testid="search-input"]', 'a');
     await page.click('[data-testid="btn-reset"]');
     await page.waitForTimeout(100);
 
-    assert(
-      (await page.locator('[data-testid="stream-btn-all"]').getAttribute('data-active')) === 'true',
-      'Reset did not restore All Streams filter'
-    );
-    assert(
-      (await page.locator('[data-testid="search-input"]').inputValue()) === '',
-      'Reset did not clear search input'
-    );
+    // 只有一条脉络时不显示「全部脉络」过滤器
+    if ((await page.locator('[data-testid="stream-btn-all"]').count()) > 0) {
+      assert(
+        (await page.locator('[data-testid="stream-btn-all"]').getAttribute('data-active')) === 'true',
+        'Reset 没有恢复「全部脉络」过滤器'
+      );
+    }
+    if (hasSearch) {
+      assert(
+        (await page.locator('[data-testid="search-input"]').inputValue()) === '',
+        'Reset 没有清空搜索框'
+      );
+    }
     assert(
       (await page.locator('.react-flow__node').count()) === initialPositions.length,
-      'Reset did not collapse expanded detail nodes back to initial state'
+      'Reset 没有把已展开的细节节点折叠回初始状态'
     );
     const afterFullResetTransform = await getFirstNodeTransform();
     assert(
       afterFullResetTransform === beforeLockDrag,
-      `Reset did not restore initial node position (${afterFullResetTransform} vs ${beforeLockDrag})`
+      `Reset 没有恢复节点的初始位置（${afterFullResetTransform} vs ${beforeLockDrag}）`
+    );
+    const edgesAfterReset = await countEdges();
+    assert(
+      edgesAfterReset === atlasMeta.edgeCount,
+      `Reset 后渲染出 ${edgesAfterReset} 条连线，应为 ${atlasMeta.edgeCount} 条`
     );
     checks.resetRestoredInitialState = true;
 
-    assert(pageErrors.length === 0, `Page errors occurred: ${pageErrors.join('; ')}`);
+    assert(pageErrors.length === 0, `页面出现错误：${pageErrors.join('; ')}`);
     checks.zeroPageErrors = true;
 
     console.log(JSON.stringify({ ok: true, htmlPath, checks }, null, 2));

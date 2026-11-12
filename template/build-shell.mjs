@@ -76,7 +76,7 @@ async function main() {
   const outAsset = path.join(REPO_ROOT, 'assets', 'viewer-shell.html');
   fs.mkdirSync(path.dirname(outAsset), { recursive: true });
   fs.writeFileSync(outAsset, htmlTemplate, 'utf8');
-  console.log(`Built assets/viewer-shell.html (${(fs.statSync(outAsset).size / 1024).toFixed(1)} KB)`);
+  console.log(`已构建 assets/viewer-shell.html（${(fs.statSync(outAsset).size / 1024).toFixed(1)} KB）`);
 }
 
 main();

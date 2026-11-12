@@ -60,6 +60,9 @@ const I18N_DICT = {
     unverifiedTitle: '待确认项说明',
     noSearchMatches: '无匹配节点',
     nestedBadge: '内部细节',
+    complexityPrefix: '复杂度：',
+    nodeCountUnit: ' 个节点',
+    complexityTiers: { simple: '简单', moderate: '中等', complex: '复杂' },
     close: '关闭',
     roles: {
       entry: '起点 / 命题',
@@ -116,6 +119,9 @@ const I18N_DICT = {
     unverifiedTitle: 'Unverified Items',
     noSearchMatches: 'No matching nodes',
     nestedBadge: 'Sub-node',
+    complexityPrefix: 'Complexity: ',
+    nodeCountUnit: ' nodes',
+    complexityTiers: { simple: 'Simple', moderate: 'Moderate', complex: 'Complex' },
     close: 'Close',
     roles: {
       entry: 'Entry / Thesis',
@@ -137,10 +143,21 @@ function resolveI18n(meta = {}) {
     ...base,
     ...custom,
     roles: { ...base.roles, ...(custom.roles || {}) },
+    complexityTiers: { ...base.complexityTiers, ...(custom.complexityTiers || {}) },
   };
 }
 
-// Restrained monochrome + muted semantic indicator dots (no rainbow card fills)
+const COMPLEXITY_TIERS = ['simple', 'moderate', 'complex'];
+
+// 地图规模档位：优先使用 meta.complexity，缺省时按顶层节点数推断
+function resolveComplexity(meta, nodeCount) {
+  if (COMPLEXITY_TIERS.includes(meta.complexity)) return meta.complexity;
+  if (nodeCount <= 6) return 'simple';
+  if (nodeCount <= 12) return 'moderate';
+  return 'complex';
+}
+
+// 克制的单色 + 低饱和语义指示点（卡片不使用彩虹填充）
 const ROLE_DOT_COLORS = {
   entry: '#18181b',
   core: '#52525b',
@@ -201,7 +218,7 @@ function fallbackCopy(text) {
   try {
     document.execCommand('copy');
   } catch (_) {
-    // ignore
+    // 忽略
   }
   document.body.removeChild(ta);
   return true;
@@ -690,6 +707,22 @@ function AtlasCanvasApp({ data }) {
   const t = useMemo(() => resolveI18n(meta), [meta]);
   const streams = Array.isArray(data.streams) ? data.streams : [];
 
+  const topNodeCount = Array.isArray(data.nodes) ? data.nodes.length : 0;
+  const complexity = resolveComplexity(meta, topNodeCount);
+  // 简单地图收起用不上的控件：几个节点不需要搜索与小地图
+  const isCompact = complexity === 'simple';
+  // 图例只列出这张地图实际用到的角色
+  const usedRoles = useMemo(() => {
+    const set = new Set();
+    for (const n of data.nodes || []) {
+      set.add(ROLE_DOT_COLORS[n.role] ? n.role : 'core');
+      for (const sn of n.detailGraph?.nodes || []) {
+        set.add(ROLE_DOT_COLORS[sn.role] ? sn.role : 'core');
+      }
+    }
+    return set;
+  }, [data.nodes]);
+
   const [activeStream, setActiveStream] = useState('all');
   const [expandedIds, setExpandedIds] = useState(() => new Set());
   const [isLocked, setIsLocked] = useState(false);
@@ -737,18 +770,28 @@ function AtlasCanvasApp({ data }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(computed.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(computed.edges);
 
+  // 初始状态已经是 computed：挂载时不再重复写入。重复写入会用未测量的节点对象覆盖
+  // React Flow 刚量好的尺寸与连接点，偶发地让所有连线不再渲染。
+  const appliedComputedRef = useRef(computed);
   useEffect(() => {
+    if (appliedComputedRef.current === computed) return;
+    appliedComputedRef.current = computed;
     setNodes(computed.nodes);
     setEdges(computed.edges);
   }, [computed, setNodes, setEdges]);
 
+  // 选中状态没有变化时返回原数组，避免无谓地替换节点对象
   useEffect(() => {
-    setNodes((prev) =>
-      prev.map((n) => {
+    setNodes((prev) => {
+      let changed = false;
+      const next = prev.map((n) => {
         const isSel = n.id === selectedId;
-        return n.selected === isSel ? n : { ...n, selected: isSel };
-      })
-    );
+        if (Boolean(n.selected) === isSel) return n;
+        changed = true;
+        return { ...n, selected: isSel };
+      });
+      return changed ? next : prev;
+    });
   }, [selectedId, setNodes]);
 
   useEffect(() => {
@@ -765,7 +808,7 @@ function AtlasCanvasApp({ data }) {
   }, [nodes, rf]);
 
   const handleFitViewOnly = useCallback(() => {
-    rf.fitView({ padding: 0.18, duration: 0 });
+    rf.fitView({ padding: 0.18, maxZoom: 1, duration: 0 });
   }, [rf]);
 
   const handleFullReset = useCallback(() => {
@@ -779,7 +822,7 @@ function AtlasCanvasApp({ data }) {
     setResetEpoch((c) => c + 1);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        rf.fitView({ padding: 0.18, duration: 0 });
+        rf.fitView({ padding: 0.18, maxZoom: 1, duration: 0 });
       });
     });
   }, [rf]);
@@ -894,6 +937,16 @@ function AtlasCanvasApp({ data }) {
                 ? `${t.levelSubPrefix}${meta.drillDownTarget}`
                 : t.levelOverview}
             </span>
+            <span
+              className="atlas-level-badge"
+              data-testid="complexity-badge"
+              data-complexity={complexity}
+              title={meta.complexityReason || undefined}
+            >
+              {t.complexityPrefix}
+              {t.complexityTiers[complexity] || complexity} · {topNodeCount}
+              {t.nodeCountUnit}
+            </span>
           </div>
           <div className="atlas-title-row">
             <h1 className="atlas-main-title">{meta.title}</h1>
@@ -921,15 +974,17 @@ function AtlasCanvasApp({ data }) {
 
       <div className="atlas-toolbar-row">
         <div className="atlas-streams-bar" data-testid="stream-filter-bar">
-          <button
-            type="button"
-            data-testid="stream-btn-all"
-            data-active={activeStream === 'all' ? 'true' : 'false'}
-            className={`atlas-stream-pill ${activeStream === 'all' ? 'active' : ''}`}
-            onClick={() => setActiveStream('all')}
-          >
-            {t.allStreams}
-          </button>
+          {streams.length > 1 && (
+            <button
+              type="button"
+              data-testid="stream-btn-all"
+              data-active={activeStream === 'all' ? 'true' : 'false'}
+              className={`atlas-stream-pill ${activeStream === 'all' ? 'active' : ''}`}
+              onClick={() => setActiveStream('all')}
+            >
+              {t.allStreams}
+            </button>
+          )}
           {streams.map((st) => {
             const isActive = activeStream === st.id;
             const hasStreamDive = Boolean(
@@ -938,15 +993,21 @@ function AtlasCanvasApp({ data }) {
             );
             return (
               <div key={st.id} className={`atlas-stream-pill-group ${isActive ? 'active' : ''}`}>
-                <button
-                  type="button"
-                  data-testid={`stream-btn-${st.id}`}
-                  data-active={isActive ? 'true' : 'false'}
-                  className={`atlas-stream-pill ${isActive ? 'active' : ''}`}
-                  onClick={() => setActiveStream(st.id)}
-                >
-                  {st.title}
-                </button>
+                {streams.length > 1 ? (
+                  <button
+                    type="button"
+                    data-testid={`stream-btn-${st.id}`}
+                    data-active={isActive ? 'true' : 'false'}
+                    className={`atlas-stream-pill ${isActive ? 'active' : ''}`}
+                    onClick={() => setActiveStream(st.id)}
+                  >
+                    {st.title}
+                  </button>
+                ) : (
+                  <span className="atlas-stream-pill static" data-testid={`stream-label-${st.id}`}>
+                    {st.title}
+                  </span>
+                )}
                 {hasStreamDive && (
                   <button
                     type="button"
@@ -970,48 +1031,50 @@ function AtlasCanvasApp({ data }) {
         </div>
 
         <div className="atlas-controls-group">
-          <div className="atlas-search-box">
-            <label htmlFor="atlas-search-input" className="atlas-search-field">
-              <span className="sr-only">{t.searchLabel}</span>
-              <IconSearch />
-              <input
-                id="atlas-search-input"
-                name="q"
-                type="search"
-                autoComplete="off"
-                spellCheck={false}
-                data-testid="search-input"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t.searchPlaceholder}
-                className="atlas-search-input"
-              />
-            </label>
-            {searchQuery.trim() !== '' && (
-              <div className="atlas-search-dropdown" data-testid="search-results" aria-live="polite">
-                {searchMatches.length === 0 ? (
-                  <div className="atlas-search-empty">{t.noSearchMatches}</div>
-                ) : (
-                  searchMatches.map((m) => (
-                    <button
-                      key={m.flowId}
-                      type="button"
-                      data-testid="search-result-item"
-                      data-target-id={m.flowId}
-                      className="atlas-search-item"
-                      onClick={() => focusSearchMatch(m)}
-                    >
-                      <div className="atlas-search-item-title">
-                        <span>{m.title}</span>
-                        {m.isSub && <span className="atlas-sub-pill">{t.nestedBadge}</span>}
-                      </div>
-                      {m.summary && <div className="atlas-search-item-sub">{m.summary}</div>}
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
+          {!isCompact && (
+            <div className="atlas-search-box">
+              <label htmlFor="atlas-search-input" className="atlas-search-field">
+                <span className="sr-only">{t.searchLabel}</span>
+                <IconSearch />
+                <input
+                  id="atlas-search-input"
+                  name="q"
+                  type="search"
+                  autoComplete="off"
+                  spellCheck={false}
+                  data-testid="search-input"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t.searchPlaceholder}
+                  className="atlas-search-input"
+                />
+              </label>
+              {searchQuery.trim() !== '' && (
+                <div className="atlas-search-dropdown" data-testid="search-results" aria-live="polite">
+                  {searchMatches.length === 0 ? (
+                    <div className="atlas-search-empty">{t.noSearchMatches}</div>
+                  ) : (
+                    searchMatches.map((m) => (
+                      <button
+                        key={m.flowId}
+                        type="button"
+                        data-testid="search-result-item"
+                        data-target-id={m.flowId}
+                        className="atlas-search-item"
+                        onClick={() => focusSearchMatch(m)}
+                      >
+                        <div className="atlas-search-item-title">
+                          <span>{m.title}</span>
+                          {m.isSub && <span className="atlas-sub-pill">{t.nestedBadge}</span>}
+                        </div>
+                        {m.summary && <div className="atlas-search-item-sub">{m.summary}</div>}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="atlas-canvas-btns">
             <button
@@ -1111,26 +1174,30 @@ function AtlasCanvasApp({ data }) {
             nodesConnectable={false}
             elementsSelectable={true}
             fitView
-            fitViewOptions={{ padding: 0.18 }}
+            fitViewOptions={{ padding: 0.18, maxZoom: 1 }}
             minZoom={0.15}
             maxZoom={2.5}
             proOptions={{ hideAttribution: true }}
           >
             <Background gap={22} size={1} color="#e4e4e7" />
-            <MiniMap
-              pannable
-              zoomable
-              maskColor="rgba(244, 244, 245, 0.7)"
-              nodeColor={(n) => {
-                const r = n.data?.item?.role;
-                return ROLE_DOT_COLORS[r] || '#71717a';
-              }}
-            />
+            {!isCompact && (
+              <MiniMap
+                pannable
+                zoomable
+                maskColor="rgba(244, 244, 245, 0.7)"
+                nodeColor={(n) => {
+                  const r = n.data?.item?.role;
+                  return ROLE_DOT_COLORS[r] || '#71717a';
+                }}
+              />
+            )}
           </ReactFlow>
 
           {showLegend && (
             <div className="atlas-legend-card" data-testid="legend-panel">
-              {Object.entries(ROLE_DOT_COLORS).map(([rKey, color]) => (
+              {Object.entries(ROLE_DOT_COLORS)
+                .filter(([rKey]) => usedRoles.has(rKey))
+                .map(([rKey, color]) => (
                 <div key={rKey} className="atlas-legend-row">
                   <span className="atlas-legend-swatch" style={{ backgroundColor: color }} aria-hidden="true" />
                   <span>{t.roles[rKey] || rKey}</span>

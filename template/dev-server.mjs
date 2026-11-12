@@ -20,7 +20,7 @@ function parseArgs(argv) {
 function ensureDevDeps() {
   const rfCss = path.join(REPO_ROOT, 'node_modules', '@xyflow', 'react', 'dist', 'style.css');
   if (fs.existsSync(rfCss)) return;
-  console.log('Installing template runtime dependencies in repository…');
+  console.log('正在仓库中安装模板运行时依赖…');
   try {
     execSync('bun install', { cwd: REPO_ROOT, stdio: 'inherit' });
   } catch (_) {
@@ -79,15 +79,15 @@ async function start() {
       debounceTimer = setTimeout(async () => {
         try {
           if (file === stylesPath) {
-            console.log('[dev] styles.css updated → hot-swapping CSS');
+            console.log('[dev] styles.css 已更新 → 热替换 CSS');
             broadcast('css');
           } else {
-            console.log(`[dev] ${path.basename(file)} updated → rebuilding & reloading`);
+            console.log(`[dev] ${path.basename(file)} 已更新 → 重新构建并刷新`);
             cachedBundle = await bundleAppJs();
             broadcast('reload');
           }
         } catch (err) {
-          console.error('[dev] build error:', err.message);
+          console.error('[dev] 构建出错：', err.message);
         }
       }, 60);
     });
@@ -136,7 +136,7 @@ async function start() {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#fafafa" />
-  <title>${parsed.meta?.title || 'Atlas Loop'} — Dev Preview</title>
+  <title>${parsed.meta?.title || 'Atlas Loop'} — 开发预览</title>
   <link rel="stylesheet" href="/__rf.css" />
   <link id="atlas-live-css" rel="stylesheet" href="/__styles.css" />
 </head>
@@ -166,11 +166,11 @@ async function start() {
   });
 
   server.listen(args.port, () => {
-    console.log(`\nAtlas Loop Template Dev Runtime running at: http://localhost:${args.port}`);
-    console.log(`- Edit template/styles.css  → Instant CSS hot-swap (preserves canvas state)`);
-    console.log(`- Edit template/app.jsx     → Auto-rebuild & reload`);
-    console.log(`- Data source               → ${args.data}`);
-    console.log(`- Bake into viewer-shell    → npm run build:shell\n`);
+    console.log(`\nAtlas Loop 模板开发运行时已启动：http://localhost:${args.port}`);
+    console.log(`- 编辑 template/styles.css  → 即时热替换 CSS（保留画布状态）`);
+    console.log(`- 编辑 template/app.jsx     → 自动重新构建并刷新`);
+    console.log(`- 数据源                    → ${args.data}`);
+    console.log(`- 写入 viewer-shell         → npm run build:shell\n`);
   });
 }
 

@@ -1,113 +1,118 @@
 # Atlas Loop (`@liduchuan/atlas-loop`)
 
-A universal recursive learning-map Agent Skill that dissects **any unfamiliar subject**—a scientific concept, craft, business model, book, software tool, or codebase—into a **standalone, zero-CDN offline interactive HTML atlas**, complete with per-node `?` follow-up and recursive sub-atlas prompts.
+一个通用的递归学习地图 Agent Skill：把**任何陌生主题**——科学概念、手艺、商业模式、书籍、软件工具或代码库——拆解为**独立、零 CDN 的离线交互式 HTML 地图**，并为每个节点配上 `?` 追问提示与递归子图提示。
 
-## Why Atlas Loop
+## 为什么需要 Atlas Loop
 
-Learners tackling an unfamiliar topic usually hit two walls: **getting lost in flat walls of detail before grasping the big picture**, and **not knowing what to ask next once the basics make sense**.
+学习陌生主题时通常会撞上两堵墙：**还没看清全局，就先迷失在平铺直叙的细节里**；以及**弄懂基础之后，不知道接下来该问什么**。
 
-`Atlas Loop` closes both gaps in one repeatable loop:
+`Atlas Loop` 用一个可重复的循环同时解决这两个问题：
 
-1. **L0 Overview → Inline Detail Drill-Down**: Renders causal streams and a recommended learning path on an `@xyflow/react` + `Dagre` auto-layout canvas. Complex nodes encapsulate an internal `detailGraph` that expands and re-layouts dynamically without overlapping neighbors.
-2. **Per-Node `?` Loop Prompts**: Every stream and core node carries an isolated `?` badge (hover to preview nuances, click to open one-click copyable prompts):
-   - **Targeted Follow-Up Prompts**: Sharp, context-anchored questions targeting real trade-offs, edge cases, or unverified boundaries—never generic *"Explain X in detail"* filler.
-   - **Recursive Sub-Atlas Prompt (`L1` / `L2+`)**: Ready-to-run prompt that promotes the current node into a dedicated child HTML atlas with a header back-link to its parent map.
-3. **Dynamic Language Sniffing**: Automatically matches the dominant language of the user's request and target material (or asks first when ambiguous), localizes canvas UI controls accordingly, and preserves technical identifiers, proper nouns, commands, and filenames intact.
-4. **Polymorphic Grounding & Honesty**: Clearly distinguishes `verified` facts from `unverified` inferences (with explicit reasons). Supports subject-appropriate anchors—copyable formulas/commands (`snippet`), chapter/paper citations (`source`), external URLs (`link`), or line-verified `vscode://` / `zed://` jumps (`editor`) when local files exist.
-5. **Decoupled Synthesis & Headless Verification**: Bundles a pre-compiled offline viewer shell (`file://` ready, zero external requests) so the model focuses purely on deep research and structured JSON, verified end-to-end by headless Playwright before delivery.
+1. **规模随复杂度伸缩**：动笔前先评估主题的复杂度（`simple` / `moderate` / `complex`），再决定画多少。简单主题只画几个节点、一条脉络，不为凑满模板而注水；页头显示档位与节点数，简单地图自动收起搜索、小地图等用不上的控件。
+2. **L0 概览 → 原地钻取细节**：在 `@xyflow/react` + `Dagre` 自动布局画布上呈现因果脉络与推荐学习路径。复杂节点内嵌 `detailGraph`，展开时动态重新布局，不与相邻节点重叠。
+3. **逐节点 `?` 循环提示**：每条脉络与每个核心节点都带有独立的 `?` 徽标（悬停预览微妙之处，点击打开可一键复制的提示）：
+   - **定向追问提示**：锚定上下文的精准问题，直指真实的权衡、边界情况或尚未验证的边界——绝不写「详细解释 X」之类的泛泛填充。
+   - **递归子图提示（`L1` / `L2+`）**：可直接运行的提示，把当前节点提升为一张独立的子 HTML 地图，页头带有指向父图的返回链接。
+4. **动态语言嗅探**：自动匹配用户请求与目标材料的主导语言（有歧义时先询问），据此本地化画布 UI 控件，并原样保留技术标识符、专有名词、命令与文件名。
+5. **多态依据与如实标注**：明确区分 `verified` 事实与 `unverified` 推断（附明确原因）。支持与主题相称的锚点——可复制的公式/命令（`snippet`）、章节/论文引用（`source`）、外部 URL（`link`），或在存在本地文件时经行号校验的 `vscode://` / `zed://` 跳转（`editor`）。
+6. **合成与无头验证解耦**：内置预编译的离线查看器外壳（可直接以 `file://` 打开，零外部请求），让模型专注于深入研究与结构化 JSON，并在交付前由无头 Playwright 端到端验证。
 
-## What You Can Dissect
+## 可以拆解什么
 
-`Atlas Loop` imposes no domain lock-in:
+`Atlas Loop` 不限定领域：
 
-- **Disciplines, Mental Models & Crafts**: e.g., *Espresso Extraction Physics*, *Macroeconomic Rate Transmission*, *Raft Consensus*
-- **Books & Long-Form Papers**: Core theses, chapter-by-chapter argument structure, key mental models, and counterexamples
-- **Software & CLI Tools**: User-intent workflows, key flags/configs, command compositions, and troubleshooting branches
-- **System Architecture & Codebases**: End-to-end business flows, internal call chains, state transitions, and one-click editor jumps to verified local file lines
+- **学科、思维模型与手艺**：例如*意式浓缩萃取物理*、*宏观经济利率传导*、*Raft 共识*
+- **书籍与长篇论文**：核心论点、逐章论证结构、关键思维模型与反例
+- **软件与 CLI 工具**：按用户意图组织的工作流、关键参数/配置、命令组合与排障分支
+- **系统架构与代码库**：端到端业务流程、内部调用链、状态流转，以及一键跳转到已验证本地文件行的编辑器链接
 
-## Installation
+## 安装
 
 ```bash
-# Install with the universal Agent Skills CLI
+# 使用通用的 Agent Skills CLI 安装
 npx skills add @liduchuan/atlas-loop
 
-# Or install directly via the bundled CLI (defaults to ~/.agents/skills/atlas-loop)
+# 或通过内置 CLI 直接安装（默认安装到 ~/.agents/skills/atlas-loop）
 npx @liduchuan/atlas-loop install
 
-# Or specify any custom skills directory
+# 或指定任意自定义 skills 目录
 npx @liduchuan/atlas-loop install --dir /path/to/skills
 ```
 
-## Example Prompts
+## 示例提示
 
-- **L0 Overview**:
-  - `Use Atlas Loop to map out the core argument structure of Thinking, Fast and Slow`
-  - `Use Atlas Loop to explain how Kubernetes Pod networking works`
-  - `Use Atlas Loop to generate an interactive learning map for this project`
-- **L1+ Recursive Deep Dive**:
-  - Open the generated `.html` file → click `?` on any core node → switch to **Recursive Sub-Atlas**, copy, and send it to your agent to generate a linked child atlas.
+- **L0 概览**：
+  - `用 Atlas Loop 梳理《思考，快与慢》的核心论证结构`
+  - `用 Atlas Loop 讲解 Kubernetes Pod 网络的工作原理`
+  - `用 Atlas Loop 为这个项目生成一张交互式学习地图`
+- **L1+ 递归深入**：
+  - 打开生成的 `.html` 文件 → 点击任一核心节点上的 `?` → 切换到**递归生成子地图**，复制后发送给你的 Agent，即可生成一张与父图相互链接的子地图。
 
-## Local Template Runtime (Style & UI Debugging)
+## 本地模板运行时（样式与 UI 调试）
 
-`template/` contains the unminified React source (`app.jsx`), stylesheet (`styles.css`), sample dataset (`sample-data.json`), and a live-reload preview server for iterating on visual design:
+`template/` 中包含未压缩的 React 源码（`app.jsx`）、样式表（`styles.css`）、示例数据集（`sample-data.json`），以及一个用于迭代视觉设计的实时重载预览服务器：
 
 ```bash
-# 1. Install dev dependencies once
+# 1. 安装一次开发依赖
 npm install
 
-# 2. Start the live-reload preview server at http://localhost:5179
-#    - Editing template/styles.css hot-swaps CSS in place without losing canvas state
-#    - Editing template/app.jsx or sample-data.json rebuilds and reloads automatically
+# 2. 启动实时重载预览服务器：http://localhost:5179
+#    - 编辑 template/styles.css 会原地热替换 CSS，不丢失画布状态
+#    - 编辑 template/app.jsx 或 sample-data.json 会自动重新构建并刷新
 npm run dev
 
-# Optional: preview with your own AtlasGraphData JSON file or custom port
+# 可选：预览只有几个节点的简单地图（收起搜索与小地图的紧凑画布）
+node template/dev-server.mjs --data template/sample-data-simple.json
+
+# 可选：用你自己的 AtlasGraphData JSON 文件或自定义端口预览
 node template/dev-server.mjs --data /path/to/graph-data.json --port 5180
 
-# 3. Bake your template changes into assets/viewer-shell.html
+# 3. 把模板改动写入 assets/viewer-shell.html
 npm run build:shell
 ```
 
-## CLI Usage
+## CLI 用法
 
-The agent invokes the bundled synthesis and verification tools automatically inside `/tmp` without touching your working tree. You can also run them directly:
+Agent 会在 `/tmp` 中自动调用内置的合成与验证工具，不会触碰你的工作目录。你也可以直接运行它们：
 
 ```bash
-# 1. Validate AtlasGraphData JSON and synthesize a standalone offline HTML file
+# 1. 校验 AtlasGraphData JSON 并合成独立的离线 HTML 文件
 npx @liduchuan/atlas-loop build --data /tmp/graph-data.json --out ./topic-atlas.html
 
-# 2. Run headless Playwright assertions (layout, lock/drag, Fit View vs Reset, ? prompts)
+# 2. 运行无头 Playwright 断言（复杂度徽标、布局、锁定/拖拽、Fit View 与 Reset 的区分、? 提示）
 npx @liduchuan/atlas-loop verify --html ./topic-atlas.html
 ```
 
-Canvas semantics enforced by verification:
+验证所强制的画布语义：
 
-- **Fit View**: Adjusts viewport pan/zoom only—preserves user-dragged node positions and active stream filters.
-- **Reset**: Dedicated button that restores initial Dagre coordinates, initial viewport, collapsed defaults, and all-streams view while clearing search and modals.
-- **Lock**: Prevents accidental node dragging while keeping pan, zoom, node inspection, and `?` prompt copying active.
+- **Fit View（适配全图）**：只调整视口的平移与缩放——保留用户拖拽后的节点位置和当前的脉络过滤器。
+- **Reset（重置）**：独立的按钮，恢复初始 Dagre 坐标、初始视口、默认折叠状态与全部脉络视图，同时清空搜索并关闭弹窗。
+- **Lock（锁定位置）**：防止误拖节点，同时保留平移、缩放、节点查看与 `?` 提示复制。
 
-## Repository Layout
+## 仓库结构
 
 ```text
 Atlas-Loop/
-├── package.json              # @liduchuan/atlas-loop manifest & dev scripts
+├── package.json              # @liduchuan/atlas-loop 包清单与开发脚本
 ├── bin/
-│   └── atlas-loop.mjs        # CLI (install, dev, build, verify)
-├── SKILL.md                  # Trigger rules, language sniffing, grounding rules, and execution workflow
+│   └── atlas-loop.mjs        # CLI（install、dev、build、verify）
+├── SKILL.md                  # 触发规则、语言嗅探、依据规则与执行流程
 ├── template/
-│   ├── app.jsx               # Unminified React + @xyflow/react UI source
-│   ├── styles.css            # Design tokens & restrained monochrome stylesheet
-│   ├── sample-data.json      # Rich sample dataset for local preview
-│   ├── dev-server.mjs        # Live-reload HTTP server (CSS hot-swap + JS rebuild)
-│   └── build-shell.mjs       # Compiles template into assets/viewer-shell.html
+│   ├── app.jsx               # 未压缩的 React + @xyflow/react UI 源码
+│   ├── styles.css            # 设计令牌与克制的单色样式表
+│   ├── sample-data.json      # 用于本地预览的示例数据集（moderate 档）
+│   ├── sample-data-simple.json # 只有几个节点的简单地图示例（simple 档）
+│   ├── dev-server.mjs        # 实时重载 HTTP 服务器（CSS 热替换 + JS 重新构建）
+│   └── build-shell.mjs       # 将模板编译为 assets/viewer-shell.html
 ├── references/
-│   └── schema.md             # AtlasGraphData v2 JSON schema and polymorphic anchor specification
+│   └── schema.md             # AtlasGraphData v2 JSON schema 与多态锚点规范
 ├── assets/
-│   └── viewer-shell.html     # Pre-compiled standalone React + @xyflow/react + Dagre offline shell
+│   └── viewer-shell.html     # 预编译的独立离线外壳（React + @xyflow/react + Dagre）
 └── scripts/
-    ├── build_atlas.mjs       # Schema validation, local file/line verification, URI encoding, secret scan & HTML synthesis
-    └── verify_atlas.mjs      # Isolated /tmp headless Playwright verification suite
+    ├── build_atlas.mjs       # schema 校验、复杂度预算、本地文件/行号核验、URI 编码、密钥扫描与 HTML 合成
+    └── verify_atlas.mjs      # 在隔离的 /tmp 中运行的无头 Playwright 验证套件
 ```
 
-## License
+## 许可证
 
 MIT

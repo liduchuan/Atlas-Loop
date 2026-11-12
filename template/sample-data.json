@@ -7,6 +7,8 @@
     "language": "zh-CN",
     "generatedByModel": "Atlas Loop Preview",
     "level": 0,
+    "complexity": "moderate",
+    "complexityReason": "渗流与溶出两条机制相互作用，并存在通道效应这一分支，但整体仍在单一物理过程之内",
     "drillDownTarget": null,
     "parentMapHtml": null,
     "editor": "vscode",
