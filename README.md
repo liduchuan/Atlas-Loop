@@ -29,8 +29,11 @@
 ## 安装
 
 ```bash
-# 使用通用的 Agent Skills CLI 安装
-npx skills add @liduchuan/atlas-loop
+# 使用通用的 Agent Skills CLI 安装到当前项目
+npx skills add liduchuan/Atlas-Loop
+
+# 全局安装（写入各 Agent 的用户级 skills 目录）
+npx skills add liduchuan/Atlas-Loop -g
 
 # 或通过内置 CLI 直接安装（默认安装到 ~/.agents/skills/atlas-loop）
 npx @liduchuan/atlas-loop install
