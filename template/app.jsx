@@ -62,9 +62,12 @@ const I18N_DICT = {
     unverifiedTitle: '待确认项说明',
     noSearchMatches: '无匹配节点',
     nestedBadge: '内部细节',
-    complexityPrefix: '复杂度：',
-    nodeCountUnit: ' 个节点',
-    complexityTiers: { simple: '简单', moderate: '中等', complex: '复杂' },
+    depthPrefix: '脊柱深度：',
+    hopsUnit: ' 跳',
+    audiencePrefix: '读者档位：',
+    scoreIntent: '这张图画到这一层，对你来说深了还是浅了？',
+    scoreOptions: '2 全是新的 · 4 名词眼熟但串不起来 · 6 主线跟得上 · 8 大部分能预判 · 10 能指出哪里不对',
+    scoreHowto: '回一个分数即可，下次的深度据此调整',
     close: '关闭',
     roles: {
       entry: '起点 / 命题',
@@ -122,9 +125,12 @@ const I18N_DICT = {
     unverifiedTitle: 'Unverified Items',
     noSearchMatches: 'No matching nodes',
     nestedBadge: 'Sub-node',
-    complexityPrefix: 'Complexity: ',
-    nodeCountUnit: ' nodes',
-    complexityTiers: { simple: 'Simple', moderate: 'Moderate', complex: 'Complex' },
+    depthPrefix: 'Depth: ',
+    hopsUnit: ' hops',
+    audiencePrefix: 'Audience: ',
+    scoreIntent: 'Is this map too shallow or too deep for you?',
+    scoreOptions: '2 all new · 4 names ring a bell, no structure · 6 main line readable · 8 mostly predictable · 10 can point out what is wrong',
+    scoreHowto: 'Reply with a score; the next map adapts to it',
     close: 'Close',
     roles: {
       entry: 'Entry / Thesis',
@@ -146,18 +152,17 @@ function resolveI18n(meta = {}) {
     ...base,
     ...custom,
     roles: { ...base.roles, ...(custom.roles || {}) },
-    complexityTiers: { ...base.complexityTiers, ...(custom.complexityTiers || {}) },
   };
 }
 
-const COMPLEXITY_TIERS = ['simple', 'moderate', 'complex'];
+const MIN_DEPTH = 2;
+const MAX_DEPTH = 6;
 
-// 地图规模档位：优先使用 meta.complexity，缺省时按顶层节点数推断
-function resolveComplexity(meta, nodeCount) {
-  if (COMPLEXITY_TIERS.includes(meta.complexity)) return meta.complexity;
-  if (nodeCount <= 6) return 'simple';
-  if (nodeCount <= 12) return 'moderate';
-  return 'complex';
+// 脊柱深度：meta.depth 是构建期已校验过的因果跳数；缺省时退回 3 跳
+function resolveDepth(meta) {
+  const d = Number(meta.depth);
+  if (Number.isInteger(d) && d >= MIN_DEPTH && d <= MAX_DEPTH) return d;
+  return 3;
 }
 
 // 克制的单色 + 低饱和语义指示点（卡片不使用彩虹填充）
@@ -821,10 +826,9 @@ function AtlasCanvasApp({ data }) {
   const t = useMemo(() => resolveI18n(meta), [meta]);
   const streams = Array.isArray(data.streams) ? data.streams : [];
 
-  const topNodeCount = Array.isArray(data.nodes) ? data.nodes.length : 0;
-  const complexity = resolveComplexity(meta, topNodeCount);
-  // 简单地图收起用不上的控件：几个节点不需要搜索与小地图
-  const isCompact = complexity === 'simple';
+  const depth = resolveDepth(meta);
+  // 浅图收起用不上的控件：两跳就讲完的主题不需要搜索与小地图
+  const isCompact = depth <= 2;
   // 图例只列出这张地图实际用到的角色
   const usedRoles = useMemo(() => {
     const set = new Set();
@@ -1055,14 +1059,20 @@ function AtlasCanvasApp({ data }) {
             </span>
             <span
               className="atlas-level-badge"
-              data-testid="complexity-badge"
-              data-complexity={complexity}
-              title={meta.complexityReason || undefined}
+              data-testid="depth-badge"
+              data-depth={depth}
+              title={meta.depthReason || undefined}
             >
-              {t.complexityPrefix}
-              {t.complexityTiers[complexity] || complexity} · {topNodeCount}
-              {t.nodeCountUnit}
+              {t.depthPrefix}
+              {depth}
+              {t.hopsUnit}
             </span>
+            {meta.audience && (
+              <span className="atlas-level-badge" data-testid="audience-badge">
+                {t.audiencePrefix}
+                {meta.audience}
+              </span>
+            )}
           </div>
           <div className="atlas-title-row">
             <h1 className="atlas-main-title">{meta.title}</h1>
@@ -1087,6 +1097,10 @@ function AtlasCanvasApp({ data }) {
           )}
         </div>
       </header>
+
+      <p className="atlas-score-reminder" data-testid="score-reminder">
+        {t.scoreIntent} {t.scoreOptions} {t.scoreHowto}
+      </p>
 
       <div className="atlas-toolbar-row">
         <div className="atlas-streams-bar" data-testid="stream-filter-bar">

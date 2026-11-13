@@ -112,38 +112,80 @@ async function main() {
     assert(modelText.trim().length > 3, '模型徽标为空');
     checks.modelDisplayed = modelText.trim();
 
-    // 复杂度：徽标与数据一致，简单地图收起搜索与小地图
+    // 深度：徽标必须与 meta.depth 一致，浅图收起搜索与小地图
     const atlasMeta = await page.evaluate(() => {
       const el = document.getElementById('atlas-data-json');
       const d = el ? JSON.parse(el.textContent) : {};
       return {
-        complexity: (d.meta && d.meta.complexity) || null,
+        depth: d.meta ? d.meta.depth : null,
+        audience: (d.meta && d.meta.audience) || null,
         nodeCount: Array.isArray(d.nodes) ? d.nodes.length : 0,
         edgeCount: Array.isArray(d.edges) ? d.edges.length : 0,
       };
     });
-    const complexityShown = await page
-      .locator('[data-testid="complexity-badge"]')
-      .getAttribute('data-complexity');
+    const depthShownRaw = await page
+      .locator('[data-testid="depth-badge"]')
+      .getAttribute('data-depth');
+    const depthShown = Number(depthShownRaw);
     assert(
-      ['simple', 'moderate', 'complex'].includes(complexityShown),
-      `复杂度徽标缺失或档位无效：${complexityShown}`
+      Number.isInteger(depthShown) && depthShown >= 2 && depthShown <= 6,
+      `深度徽标缺失或跳数无效：${depthShownRaw}`
     );
-    if (atlasMeta.complexity) {
+    assert(
+      depthShown === Number(atlasMeta.depth),
+      `深度徽标（${depthShown}）与 meta.depth（${atlasMeta.depth}）不一致`
+    );
+    const depthText = (await page.locator('[data-testid="depth-badge"]').textContent()) || '';
+    assert(
+      depthText.includes(String(depthShown)),
+      `深度徽标文案没有写出跳数：${depthText.trim()}`
+    );
+    if (atlasMeta.audience) {
+      const audienceText =
+        (await page.locator('[data-testid="audience-badge"]').textContent()) || '';
       assert(
-        complexityShown === atlasMeta.complexity,
-        `复杂度徽标（${complexityShown}）与 meta.complexity（${atlasMeta.complexity}）不一致`
+        audienceText.includes(atlasMeta.audience),
+        `读者档位徽标没有显示 meta.audience：${audienceText.trim()}`
       );
     }
-    const isCompact = complexityShown === 'simple';
+    const isCompact = depthShown <= 2;
     const hasSearch = (await page.locator('[data-testid="search-input"]').count()) > 0;
     const hasMiniMap = (await page.locator('.react-flow__minimap').count()) > 0;
     assert(
       isCompact ? !hasSearch && !hasMiniMap : hasSearch && hasMiniMap,
-      isCompact ? '简单地图没有收起搜索与小地图' : '非简单地图缺少搜索或小地图'
+      isCompact ? '浅图没有收起搜索与小地图' : '非浅图缺少搜索或小地图'
     );
-    checks.complexity = complexityShown;
+    checks.depth = depthShown;
     checks.compactChrome = isCompact;
+
+    // 评分提醒必须是纯文本：提醒用户打分，但不得有任何交互控件或本地存储
+    const reminder = page.locator('[data-testid="score-reminder"]');
+    assert((await reminder.count()) === 1, '缺少评分提醒');
+    const reminderInfo = await reminder.evaluate((el) => ({
+      buttons: el.querySelectorAll('button, input, textarea, select, a').length,
+      text: (el.textContent || '').trim(),
+    }));
+    assert(reminderInfo.buttons === 0, '评分提醒中出现了交互控件（要求纯文本，不触发 HITL）');
+    assert(
+      /2[\s\S]*10/.test(reminderInfo.text),
+      `评分提醒没有列出 2→10 的档位：${reminderInfo.text.slice(0, 60)}`
+    );
+    const storageUsed = await page.evaluate(async () => {
+      const idbNames =
+        window.indexedDB && window.indexedDB.databases
+          ? (await window.indexedDB.databases()).map((d) => d.name || '')
+          : [];
+      return {
+        ls: Object.keys(window.localStorage),
+        ss: Object.keys(window.sessionStorage),
+        idb: idbNames,
+      };
+    });
+    const storageKeys = [...storageUsed.ls, ...storageUsed.ss, ...storageUsed.idb];
+    assert(
+      storageKeys.length === 0,
+      `地图写入了浏览器存储（${storageKeys.join(', ')}）：产物必须是无状态的单文件`
+    );
 
     // 2. 画布尺寸非零，且初始概览节点互不重叠
     const canvasBox = await page.locator('[data-testid="atlas-canvas-wrap"]').boundingBox();
@@ -276,8 +318,8 @@ async function main() {
       'Fit View 错误地重置了被拖拽节点的坐标！'
     );
     assert(
-      viewportAfterFit.length > 0 && (viewportAfterFit !== viewportBeforeFit || initialPositions.length > 0),
-      'Fit View 视口检查未通过'
+      viewportAfterFit !== viewportBeforeFit,
+      'Fit View 没有调整视口（视口在点击前后完全一致）'
     );
     if (streamBtnCount > 1) {
       assert(
@@ -286,15 +328,29 @@ async function main() {
       );
     }
 
-    // 6. 展开 detailGraph（如有）与搜索
+    // 6. 展开 detailGraph（如有）再折叠回去与搜索
     const expandBtns = page.locator('[data-testid="node-expand-btn"]');
     if ((await expandBtns.count()) > 0) {
       const countBeforeExpand = await page.locator('.react-flow__node').count();
+      const edgesBeforeExpand = await countEdges();
       await expandBtns.first().click();
       await page.waitForTimeout(80);
       const countAfterExpand = await page.locator('.react-flow__node').count();
       assert(countAfterExpand > countBeforeExpand, '展开 detailGraph 后没有新增细节子节点');
       assert((await countEdges()) > 0, '展开 detailGraph 后连线消失了');
+
+      await expandBtns.first().click();
+      await page.waitForTimeout(80);
+      const countAfterCollapse = await page.locator('.react-flow__node').count();
+      assert(
+        countAfterCollapse === countBeforeExpand,
+        `折叠 detailGraph 后节点数没有回到初始值（${countAfterCollapse} ≠ ${countBeforeExpand}）`
+      );
+      const edgesAfterCollapse = await countEdges();
+      assert(
+        edgesAfterCollapse === edgesBeforeExpand,
+        `折叠 detailGraph 后连线数没有恢复（${edgesAfterCollapse} ≠ ${edgesBeforeExpand}）`
+      );
       checks.detailDrillDown = true;
     }
 

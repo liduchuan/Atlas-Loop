@@ -18,7 +18,8 @@
   },
   "scripts": {
     "dev": "node template/dev-server.mjs",
-    "build:shell": "node template/build-shell.mjs"
+    "build:shell": "node template/build-shell.mjs",
+    "test": "node scripts/test_profile.mjs"
   },
   "files": [
     "SKILL.md",

@@ -15,8 +15,9 @@
     "uiLabels": {},
     "generatedByModel": "<你当前使用的确切模型名称>",
     "level": 0,
-    "complexity": "moderate",
-    "complexityReason": "一句话写明复杂度判断依据",
+    "depth": 3,
+    "depthReason": "一句话写明深度判断依据：学习者能自己补上几跳中间环节",
+    "audience": "一句话写明这张图假设读者已经会什么",
     "drillDownTarget": null,
     "parentMapHtml": null,
     "editor": "vscode",
@@ -101,22 +102,24 @@
 
 ## 字段规则
 
-1. **`meta.complexity` 与 `meta.complexityReason`（必填）**：
-   - 先评估主题复杂度，再决定地图规模。`complexity` 取 `simple`、`moderate` 或 `complex`，`complexityReason` 用一句话写明判断依据。
-   - `build_atlas.mjs` 按档位校验规模预算：
+1. **`meta.depth`、`meta.depthReason` 与 `meta.audience`（前两者必填）**：
+   - `depth` 是脊柱上必须连出的因果跳数，取 `2`–`6` 的整数；`depthReason` 用一句话写明判断依据。深度衡量的是读者的位置，不是主题的体积：节点数不参与判断。
+   - 评分与深度互为反函数（`depth = 分数 / 2 + 1`：2 分→2 跳，10 分→6 跳）。动笔前用 `scripts/profile.mjs read` 取学习者当前档案，没有记录时从 3 跳起步。
+   - `audience` 是可选的一句话，写明这张图假设读者已经会什么；填写后画布页头会显示「读者档位：…」。
+   - `build_atlas.mjs` 会算出顶层最长因果链（边数）并校验：
 
-     | 档位 | 顶层节点上限 | 脉络上限 | 超出时 |
-     | --- | --- | --- | --- |
-     | `simple` | 6 | 1 | 报错 |
-     | `moderate` | 12 | 3 | 报错 |
-     | `complex` | 20 | 5 | 警告：把细节收进 `detailGraph` 或留给 L1+ 子图 |
+     | 情形 | 结果 |
+     | --- | --- |
+     | 最长链 < `depth` | 报错：脊柱没有连到底 |
+     | 最长链 > 8 跳 | 警告：一次跟不完，考虑收进 `detailGraph` |
+     | 顶层边成环 | 报错：脊柱必须是 DAG |
+     | 顶层节点 > 20 | 警告：宽度不提升难度，只会稀释视线 |
 
-   - 档位明显偏高时（`moderate` 少于 5 个顶层节点、`complex` 少于 8 个）输出警告，提示下调。
-   - 画布在页头显示档位与顶层节点数，悬停可见 `complexityReason`；`simple` 档收起搜索与小地图，只有一条脉络时不显示脉络过滤器，图例只列出实际用到的角色。
-   - 除 `id`、`title`、`role`、`streamIds` 外，节点的说明性字段（`whyItMatters`、`keyFactors`、`mechanismsAndEffects`、`watchouts`、`anchors`、`detailGraph`、`deepDive`）都是可选的，只在确有内容时填写；整张图至少要有一个节点带 `deepDive`。
+   - 画布在页头显示「脊柱深度：N 跳」与读者档位；`depth <= 2` 时收起搜索与小地图，只有一条脉络时不显示脉络过滤器，图例只列出实际用到的角色。
+   - 除 `id`、`title`、`role`、`streamIds` 外，节点的说明性字段（`whyItMatters`、`keyFactors`、`mechanismsAndEffects`、`watchouts`、`anchors`、`detailGraph`、`deepDive`）都是可选的，只在确有内容时填写；整张图至少要有一个节点或脉络带 `deepDive`。
 2. **`meta.language` 与 `meta.uiLabels`**：
    - 内置词典会自动为 `zh*` 与 `en*` 本地化 UI。
-   - 当 `meta.language` 是其他语言（如 `ja`、`ko`、`es`、`fr`、`de`）时，在 `meta.uiLabels` 中为以下键填入本地化字符串（`skipToCanvas`、`modelPrefix`、`backParent`、`levelOverview`、`levelSubPrefix`、`allStreams`、`searchLabel`、`searchPlaceholder`、`zoomIn`、`zoomOut`、`lock`、`unlock`、`fitView`、`reset`、`legend`、`scopeNotes`、`learningPath`、`expandDetail`、`collapseDetail`、`detailEdgeLabel`、`deepDiveModalTitle`、`tabAsk`、`tabRecursive`、`copyBtn`、`copiedBtn`、`openInEditor`、`whatItDoes`、`whyItMatters`、`inputsLabel`、`outputsLabel`、`mechanismsLabel`、`watchoutsLabel`、`anchorsLabel`、`openDeepDiveBtn`、`unverifiedTag`、`verifiedTag`、`close`、`complexityPrefix`、`nodeCountUnit`，以及 `roles` 与 `complexityTiers` 两个对象）。
+   - 当 `meta.language` 是其他语言（如 `ja`、`ko`、`es`、`fr`、`de`）时，在 `meta.uiLabels` 中为以下键填入本地化字符串（`skipToCanvas`、`modelPrefix`、`backParent`、`levelOverview`、`levelSubPrefix`、`allStreams`、`searchLabel`、`searchPlaceholder`、`zoomIn`、`zoomOut`、`lock`、`unlock`、`fitView`、`reset`、`legend`、`exportPng`、`scopeNotes`、`learningPath`、`expandDetail`、`collapseDetail`、`detailEdgeLabel`、`deepDiveBadgeTitle`、`deepDiveModalTitle`、`tabAsk`、`tabRecursive`、`copyBtn`、`copiedBtn`、`copySnippet`、`openInEditor`、`editorConfirmHint`、`recursiveUsageHint`、`whatItDoes`、`whyItMatters`、`inputsLabel`、`outputsLabel`、`mechanismsLabel`、`watchoutsLabel`、`anchorsLabel`、`openDeepDiveBtn`、`unverifiedTag`、`verifiedTag`、`uncoveredTitle`、`unverifiedTitle`、`noSearchMatches`、`nestedBadge`、`depthPrefix`、`hopsUnit`、`audiencePrefix`、`scoreIntent`、`scoreOptions`、`scoreHowto`、`close`，以及 `roles` 一个对象）。
 3. **7 种通用认知角色（`node.role`）**：
    - `entry`：起点、用户动作、核心问题或触发因素。
    - `core`：主要机制、处理步骤或主论证。

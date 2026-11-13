@@ -8,7 +8,7 @@
 
 `Atlas Loop` 用一个可重复的循环同时解决这两个问题：
 
-1. **规模随复杂度伸缩**：动笔前先评估主题的复杂度（`simple` / `moderate` / `complex`），再决定画多少。简单主题只画几个节点、一条脉络，不为凑满模板而注水；页头显示档位与节点数，简单地图自动收起搜索、小地图等用不上的控件。
+1. **深浅随人伸缩**：地图讲多深取决于读者已经在哪一层，不取决于主题有多大。`Atlas Loop` 把每次交付后的评分（10 分制、5 个档位）记进 `~/.atlas-loop/profile.json`，按 `领域/职业/职业精分` 分层、按模型分开统计；下次画同一领域时据此决定脊柱深度（2–6 跳）。新手拿到停在机制层的地图，熟手拿到一路推到第一性原理的地图。页头显示脊柱深度与读者档位，浅图自动收起搜索、小地图等用不上的控件。
 2. **L0 概览 → 原地钻取细节**：在 `@xyflow/react` + `Dagre` 自动布局画布上呈现因果脉络与推荐学习路径。复杂节点内嵌 `detailGraph`，展开时动态重新布局，不与相邻节点重叠。
 3. **逐节点 `↳` 循环提示**：每条脉络与每个核心节点都带有独立的 `↳` 徽标（悬停预览微妙之处，点击打开可一键复制的提示）：
    - **定向追问提示**：锚定上下文的精准问题，直指真实的权衡、边界情况或尚未验证的边界——绝不写「详细解释 X」之类的泛泛填充。
@@ -64,7 +64,7 @@ npm install
 #    - 编辑 template/app.jsx 或 sample-data.json 会自动重新构建并刷新
 npm run dev
 
-# 可选：预览只有几个节点的简单地图（收起搜索与小地图的紧凑画布）
+# 可选：预览浅图（depth <= 2，自动收起搜索与小地图的紧凑画布）
 node template/dev-server.mjs --data template/sample-data-simple.json
 
 # 可选：用你自己的 AtlasGraphData JSON 文件或自定义端口预览
@@ -72,6 +72,9 @@ node template/dev-server.mjs --data /path/to/graph-data.json --port 5180
 
 # 3. 把模板改动写入 assets/viewer-shell.html
 npm run build:shell
+
+# 4. 跑学习者档案的回归测试（评分吸附、顶格判定、模型分层、前缀继承）
+npm test
 ```
 
 ## CLI 用法
@@ -82,7 +85,7 @@ Agent 会在 `/tmp` 中自动调用内置的合成与验证工具，不会触碰
 # 1. 校验 AtlasGraphData JSON 并合成独立的离线 HTML 文件
 npx @liduchuan/atlas-loop build --data /tmp/graph-data.json --out ./topic-atlas.html
 
-# 2. 运行无头 Playwright 断言（复杂度徽标、布局、锁定/拖拽、Fit View 与 Reset 的区分、↳ 提示）
+# 2. 运行无头 Playwright 断言（深度徽标与数据一致、读者档位、评分提醒为纯文本、布局、锁定/拖拽、Fit View 与 Reset 的区分、↳ 提示）
 npx @liduchuan/atlas-loop verify --html ./topic-atlas.html
 ```
 
@@ -104,8 +107,8 @@ Atlas-Loop/
 ├── template/
 │   ├── app.jsx               # 未压缩的 React + @xyflow/react UI 源码
 │   ├── styles.css            # 设计令牌与克制的单色样式表
-│   ├── sample-data.json      # 用于本地预览的示例数据集（moderate 档）
-│   ├── sample-data-simple.json # 只有几个节点的简单地图示例（simple 档）
+│   ├── sample-data.json      # 用于本地预览的示例数据集（深图，脊柱 4 跳）
+│   ├── sample-data-simple.json # 浅图示例（脊柱 2 跳，紧凑画布）
 │   ├── dev-server.mjs        # 实时重载 HTTP 服务器（CSS 热替换 + JS 重新构建）
 │   └── build-shell.mjs       # 将模板编译为 assets/viewer-shell.html
 ├── references/
@@ -113,8 +116,10 @@ Atlas-Loop/
 ├── assets/
 │   └── viewer-shell.html     # 预编译的独立离线外壳（React + @xyflow/react + Dagre）
 └── scripts/
-    ├── build_atlas.mjs       # schema 校验、复杂度预算、本地文件/行号核验、URI 编码、密钥扫描与 HTML 合成
-    └── verify_atlas.mjs      # 在隔离的 /tmp 中运行的无头 Playwright 验证套件
+    ├── build_atlas.mjs       # schema 校验、脊柱深度校验、本地文件/行号核验、URI 编码、密钥扫描与 HTML 合成
+    ├── verify_atlas.mjs      # 在隔离的 /tmp 中运行的无头 Playwright 验证套件
+    ├── profile.mjs           # 学习者评分档案（~/.atlas-loop/profile.json）的读写与深度估计
+    └── test_profile.mjs      # profile.mjs 的回归测试（评分吸附、顶格判定、模型分层、前缀继承）
 ```
 
 ## 许可证

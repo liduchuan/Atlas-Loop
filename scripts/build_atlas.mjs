@@ -24,12 +24,47 @@ const SECRET_PATTERNS = [
   /\bAKIA[0-9A-Z]{16}\b/,
 ];
 
-// 各复杂度档位的地图规模预算：顶层节点与脉络的上限，以及低于多少节点时提示下调档位
-const COMPLEXITY_BUDGETS = {
-  simple: { maxNodes: 6, maxStreams: 1, minNodes: 0 },
-  moderate: { maxNodes: 12, maxStreams: 3, minNodes: 5 },
-  complex: { maxNodes: 20, maxStreams: 5, minNodes: 8 },
-};
+// 深度 = 脊柱上允许的因果跳数。评分 → 深度：depth = score / 2 + 1（2 分→2 跳，10 分→6 跳）
+const MIN_DEPTH = 2;
+const MAX_DEPTH = 6;
+const TOP_NODE_SOFT_CAP = 20;
+
+// 泛泛填充的伪追问：没有锚定任何具体机制，读者点开也问不出东西
+const LAZY_PROMPT_PATTERNS = [
+  /^\s*(请)?(详细|仔细|全面|系统)(地)?(解释|介绍|说明|讲讲|说说)/,
+  /^\s*(解释|介绍|说明|讲讲|说说)(一下)?\s*\S{0,12}\s*$/,
+  /^\s*(tell me|explain|describe)\b.{0,24}$/i,
+  /^\s*more (details|info)\b/i,
+];
+
+// 顶层图上的最长因果链（边数）。存在环时返回 null——脊柱必须是 DAG
+function longestChain(nodes, edges) {
+  const out = new Map(nodes.map((n) => [n.id, []]));
+  for (const e of edges) {
+    if (out.has(e.source)) out.get(e.source).push(e.target);
+  }
+  const state = new Map();
+  let cycle = false;
+  const memo = new Map();
+  const visit = (id) => {
+    if (state.get(id) === 1) {
+      cycle = true;
+      return 0;
+    }
+    if (state.get(id) === 2) return memo.get(id) || 0;
+    state.set(id, 1);
+    let best = 0;
+    for (const next of out.get(id) || []) {
+      best = Math.max(best, 1 + visit(next));
+    }
+    state.set(id, 2);
+    memo.set(id, best);
+    return best;
+  };
+  let longest = 0;
+  for (const n of nodes) longest = Math.max(longest, visit(n.id));
+  return cycle ? null : longest;
+}
 
 function parseArgs(argv) {
   const args = {};
@@ -93,42 +128,14 @@ function validateAndEnrich(data) {
   const nodes = Array.isArray(data.nodes) ? data.nodes : [];
   if (nodes.length === 0) errors.push('data.nodes 中至少需要一个节点');
 
-  const budget = COMPLEXITY_BUDGETS[meta.complexity];
-  if (!budget) {
+  const depth = Number(meta.depth);
+  if (!Number.isInteger(depth) || depth < MIN_DEPTH || depth > MAX_DEPTH) {
     errors.push(
-      `缺少或无效的 meta.complexity "${meta.complexity}"，必须是以下之一：${Object.keys(COMPLEXITY_BUDGETS).join(', ')}（先评估主题复杂度，再决定地图规模）`
+      `缺少或无效的 meta.depth "${meta.depth}"：必须是 ${MIN_DEPTH}–${MAX_DEPTH} 的整数（脊柱上允许省略的因果跳数）`
     );
-  } else {
-    const tier = meta.complexity;
-    const overHint = '请删去不必要的内容，确有依据时再上调档位';
-    if (!meta.complexityReason || !String(meta.complexityReason).trim()) {
-      errors.push('缺少 meta.complexityReason（用一句话写明复杂度判断依据）');
-    }
-    if (nodes.length > budget.maxNodes) {
-      if (tier === 'complex') {
-        warnings.push(
-          `有 ${nodes.length} 个顶层节点（建议不超过 ${budget.maxNodes}）：把细节收进 detailGraph，或留给 L1+ 子图`
-        );
-      } else {
-        errors.push(
-          `meta.complexity 为 ${tier}，但有 ${nodes.length} 个顶层节点（上限 ${budget.maxNodes}）：${overHint}`
-        );
-      }
-    }
-    if (streams.length > budget.maxStreams) {
-      if (tier === 'complex') {
-        warnings.push(`有 ${streams.length} 条脉络（建议不超过 ${budget.maxStreams}）：合并相近的脉络`);
-      } else {
-        errors.push(
-          `meta.complexity 为 ${tier}，但有 ${streams.length} 条脉络（上限 ${budget.maxStreams}）：${overHint}`
-        );
-      }
-    }
-    if (nodes.length > 0 && nodes.length < budget.minNodes) {
-      warnings.push(
-        `meta.complexity 为 ${tier}，但只有 ${nodes.length} 个顶层节点：档位可能偏高，考虑下调`
-      );
-    }
+  }
+  if (!meta.depthReason || !String(meta.depthReason).trim()) {
+    errors.push('缺少 meta.depthReason（用一句话写明深度判断依据：学习者能补上几跳中间环节）');
   }
 
   const nodeIds = new Set();
@@ -192,8 +199,13 @@ function validateAndEnrich(data) {
       const asks = Array.isArray(n.deepDive.askPrompts) ? n.deepDive.askPrompts : [];
       if (asks.length > 0 || n.deepDive.subAtlasPrompt) deepDiveNodeCount++;
       for (const ap of asks) {
-        if (!ap.prompt || String(ap.prompt).trim().length < 20) {
+        const text = String(ap.prompt || '').trim();
+        if (text.length < 20) {
           errors.push(`节点 ${n.id}：askPrompts 必须是具体、有实质内容的问题（不少于 20 个字符）`);
+        } else if (LAZY_PROMPT_PATTERNS.some((p) => p.test(text))) {
+          errors.push(
+            `节点 ${n.id}：askPrompts "${text.slice(0, 24)}…" 是泛泛填充，必须锚定具体机制、边界情况或权衡`
+          );
         }
       }
     }
@@ -211,12 +223,40 @@ function validateAndEnrich(data) {
         if (!subIds.has(se.source) || !subIds.has(se.target)) {
           errors.push(`节点 ${n.id} 的 detailGraph 边引用了未知子节点：${se.source} -> ${se.target}`);
         }
+        if (!se.label || !String(se.label).trim()) {
+          errors.push(`节点 ${n.id} 的 detailGraph 边 ${se.source} -> ${se.target}：必须填写 label`);
+        }
       }
     }
   }
 
+  // 脊柱检查：顶层最长因果链必须真的连到 meta.depth 跳。深度是可证伪的，节点数不是
+  const chain = longestChain(nodes, data.edges || []);
+  if (chain === null) {
+    errors.push('顶层边构成了环，无法确定脊柱：请把循环关系改成单向因果或收进 detailGraph');
+  } else if (Number.isInteger(depth)) {
+    if (chain < depth) {
+      errors.push(
+        `meta.depth 为 ${depth}，但顶层最长因果链只有 ${chain} 跳：脊柱没有连到底。要么补上被省略的中间环节，要么下调 depth`
+      );
+    } else if (chain > MAX_DEPTH + 2) {
+      warnings.push(`顶层最长因果链有 ${chain} 跳：超过 ${MAX_DEPTH + 2} 跳后读者很难一次跟完，考虑收进 detailGraph`);
+    }
+  }
+  if (nodes.length > TOP_NODE_SOFT_CAP) {
+    warnings.push(
+      `有 ${nodes.length} 个顶层节点（软上限 ${TOP_NODE_SOFT_CAP}）：节点数不决定档位，但过宽会稀释视线，考虑把细节收进 detailGraph`
+    );
+  }
+
   if (deepDiveNodeCount === 0) {
-    errors.push('至少要有一个核心节点提供 deepDive 提示（↳ 循环提示）');
+    const streamDiveCount = streams.filter((s) => {
+      const asks = Array.isArray(s.deepDive?.askPrompts) ? s.deepDive.askPrompts : [];
+      return asks.length > 0 || s.deepDive?.subAtlasPrompt;
+    }).length;
+    if (streamDiveCount === 0) {
+      errors.push('至少要有一个节点或一条脉络提供 deepDive 提示（↳ 循环提示）');
+    }
   }
 
   for (const s of streams) {
@@ -297,7 +337,7 @@ function main() {
         bytes: fs.statSync(outPath).size,
         nodeCount: validated.nodes.length,
         streamCount: validated.streams.length,
-        complexity: meta.complexity,
+        depth: meta.depth,
         ...(warnings.length > 0 ? { warnings } : {}),
       },
       null,
