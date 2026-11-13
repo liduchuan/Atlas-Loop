@@ -264,7 +264,7 @@ function main() {
     const bound = result.censored ? '（下界，真实能力更高）' : '';
     console.log(
       `${args.domain} 估计 ${result.estimate} 分${bound}${src}，` +
-        `建议脊柱深度 ${result.recommendedDepth} 跳；共 ${result.observationCount} 条观测。`
+        `建议因果链深度 ${result.recommendedDepth} 跳；共 ${result.observationCount} 条观测。`
     );
     return;
   }

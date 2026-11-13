@@ -62,7 +62,7 @@ const I18N_DICT = {
     unverifiedTitle: '待确认项说明',
     noSearchMatches: '无匹配节点',
     nestedBadge: '内部细节',
-    depthPrefix: '脊柱深度：',
+    depthPrefix: '因果链深度：',
     hopsUnit: ' 跳',
     audiencePrefix: '读者档位：',
     scoreIntent: '这张图画到这一层，对你来说深了还是浅了？',
@@ -158,7 +158,7 @@ function resolveI18n(meta = {}) {
 const MIN_DEPTH = 2;
 const MAX_DEPTH = 6;
 
-// 脊柱深度：meta.depth 是构建期已校验过的因果跳数；缺省时退回 3 跳
+// 因果链深度：meta.depth 是构建期已校验过的因果跳数；缺省时退回 3 跳
 function resolveDepth(meta) {
   const d = Number(meta.depth);
   if (Number.isInteger(d) && d >= MIN_DEPTH && d <= MAX_DEPTH) return d;

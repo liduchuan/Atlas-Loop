@@ -24,7 +24,7 @@ const SECRET_PATTERNS = [
   /\bAKIA[0-9A-Z]{16}\b/,
 ];
 
-// 深度 = 脊柱上允许的因果跳数。评分 → 深度：depth = score / 2 + 1（2 分→2 跳，10 分→6 跳）
+// 深度 = 因果链上允许的跳数。评分 → 深度：depth = score / 2 + 1（2 分→2 跳，10 分→6 跳）
 const MIN_DEPTH = 2;
 const MAX_DEPTH = 6;
 const TOP_NODE_SOFT_CAP = 20;
@@ -37,7 +37,7 @@ const LAZY_PROMPT_PATTERNS = [
   /^\s*more (details|info)\b/i,
 ];
 
-// 顶层图上的最长因果链（边数）。存在环时返回 null——脊柱必须是 DAG
+// 顶层图上的最长因果链（边数）。存在环时返回 null——因果链必须是 DAG
 function longestChain(nodes, edges) {
   const out = new Map(nodes.map((n) => [n.id, []]));
   for (const e of edges) {
@@ -131,7 +131,7 @@ function validateAndEnrich(data) {
   const depth = Number(meta.depth);
   if (!Number.isInteger(depth) || depth < MIN_DEPTH || depth > MAX_DEPTH) {
     errors.push(
-      `缺少或无效的 meta.depth "${meta.depth}"：必须是 ${MIN_DEPTH}–${MAX_DEPTH} 的整数（脊柱上允许省略的因果跳数）`
+      `缺少或无效的 meta.depth "${meta.depth}"：必须是 ${MIN_DEPTH}–${MAX_DEPTH} 的整数（因果链允许的跳数）`
     );
   }
   if (!meta.depthReason || !String(meta.depthReason).trim()) {
@@ -230,14 +230,14 @@ function validateAndEnrich(data) {
     }
   }
 
-  // 脊柱检查：顶层最长因果链必须真的连到 meta.depth 跳。深度是可证伪的，节点数不是
+  // 深度检查：顶层最长因果链必须真的连到 meta.depth 跳。深度是可证伪的，节点数不是
   const chain = longestChain(nodes, data.edges || []);
   if (chain === null) {
-    errors.push('顶层边构成了环，无法确定脊柱：请把循环关系改成单向因果或收进 detailGraph');
+    errors.push('顶层边构成了环，无法确定因果链：请把循环关系改成单向因果或收进 detailGraph');
   } else if (Number.isInteger(depth)) {
     if (chain < depth) {
       errors.push(
-        `meta.depth 为 ${depth}，但顶层最长因果链只有 ${chain} 跳：脊柱没有连到底。要么补上被省略的中间环节，要么下调 depth`
+        `meta.depth 为 ${depth}，但顶层最长因果链只有 ${chain} 跳：因果链没有连到底。要么补上被省略的中间环节，要么下调 depth`
       );
     } else if (chain > MAX_DEPTH + 2) {
       warnings.push(`顶层最长因果链有 ${chain} 跳：超过 ${MAX_DEPTH + 2} 跳后读者很难一次跟完，考虑收进 detailGraph`);

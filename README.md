@@ -8,7 +8,7 @@
 
 `Atlas Loop` 用一个可重复的循环同时解决这两个问题：
 
-1. **深浅随人伸缩**：地图讲多深取决于读者已经在哪一层，不取决于主题有多大。`Atlas Loop` 把每次交付后的评分（10 分制、5 个档位）记进 `~/.atlas-loop/profile.json`，按 `领域/职业/职业精分` 分层、按模型分开统计；下次画同一领域时据此决定脊柱深度（2–6 跳）。新手拿到停在机制层的地图，熟手拿到一路推到第一性原理的地图。页头显示脊柱深度与读者档位，浅图自动收起搜索、小地图等用不上的控件。
+1. **深浅随人伸缩**：地图讲多深取决于读者已经在哪一层，不取决于主题有多大。`Atlas Loop` 把每次交付后的评分（10 分制、5 个档位）记进 `~/.atlas-loop/profile.json`，按 `领域/职业/职业精分` 分层、按模型分开统计；下次画同一领域时据此决定因果链深度（2–6 跳）。新手拿到停在机制层的地图，熟手拿到一路推到第一性原理的地图。页头显示因果链深度与读者档位，浅图自动收起搜索、小地图等用不上的控件。
 2. **L0 概览 → 原地钻取细节**：在 `@xyflow/react` + `Dagre` 自动布局画布上呈现因果脉络与推荐学习路径。复杂节点内嵌 `detailGraph`，展开时动态重新布局，不与相邻节点重叠。
 3. **逐节点 `↳` 循环提示**：每条脉络与每个核心节点都带有独立的 `↳` 徽标（悬停预览微妙之处，点击打开可一键复制的提示）：
    - **定向追问提示**：锚定上下文的精准问题，直指真实的权衡、边界情况或尚未验证的边界——绝不写「详细解释 X」之类的泛泛填充。
@@ -107,8 +107,8 @@ Atlas-Loop/
 ├── template/
 │   ├── app.jsx               # 未压缩的 React + @xyflow/react UI 源码
 │   ├── styles.css            # 设计令牌与克制的单色样式表
-│   ├── sample-data.json      # 用于本地预览的示例数据集（深图，脊柱 4 跳）
-│   ├── sample-data-simple.json # 浅图示例（脊柱 2 跳，紧凑画布）
+│   ├── sample-data.json      # 用于本地预览的示例数据集（深图，因果链 4 跳）
+│   ├── sample-data-simple.json # 浅图示例（因果链 2 跳，紧凑画布）
 │   ├── dev-server.mjs        # 实时重载 HTTP 服务器（CSS 热替换 + JS 重新构建）
 │   └── build-shell.mjs       # 将模板编译为 assets/viewer-shell.html
 ├── references/
@@ -116,7 +116,7 @@ Atlas-Loop/
 ├── assets/
 │   └── viewer-shell.html     # 预编译的独立离线外壳（React + @xyflow/react + Dagre）
 └── scripts/
-    ├── build_atlas.mjs       # schema 校验、脊柱深度校验、本地文件/行号核验、URI 编码、密钥扫描与 HTML 合成
+    ├── build_atlas.mjs       # schema 校验、因果链深度校验、本地文件/行号核验、URI 编码、密钥扫描与 HTML 合成
     ├── verify_atlas.mjs      # 在隔离的 /tmp 中运行的无头 Playwright 验证套件
     ├── profile.mjs           # 学习者评分档案（~/.atlas-loop/profile.json）的读写与深度估计
     └── test_profile.mjs      # profile.mjs 的回归测试（评分吸附、顶格判定、模型分层、前缀继承）
