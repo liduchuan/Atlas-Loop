@@ -1,19 +1,19 @@
-import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { createRoot } from 'react-dom/client';
-import {
-  ReactFlow,
-  ReactFlowProvider,
-  Background,
-  MiniMap,
-  Handle,
-  Position,
-  MarkerType,
-  useNodesState,
-  useEdgesState,
-  useReactFlow,
-} from '@xyflow/react';
 import dagre from '@dagrejs/dagre';
+import {
+    Background,
+    Handle,
+    MarkerType,
+    MiniMap,
+    Position,
+    ReactFlow,
+    ReactFlowProvider,
+    useEdgesState,
+    useNodesState,
+    useReactFlow,
+} from '@xyflow/react';
 import { toPng } from 'html-to-image';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createRoot } from 'react-dom/client';
 
 const I18N_DICT = {
   zh: {
@@ -52,6 +52,7 @@ const I18N_DICT = {
     recursiveUsageHint: '将下方提示词发送给 AI，即可围绕当前节点递归生成下一层独立交互式 HTML 子地图：',
     whatItDoes: '核心说明',
     whyItMatters: '关键价值',
+    miniMap: '缩览图',
     inputsLabel: '前置 / 输入',
     outputsLabel: '结果 / 产出',
     mechanismsLabel: '内部机制与影响',
@@ -117,6 +118,7 @@ const I18N_DICT = {
     recursiveUsageHint: 'Send this prompt to your AI agent to generate a linked child HTML atlas for this node:',
     whatItDoes: 'Summary',
     whyItMatters: 'Why It Matters',
+    miniMap: 'Mini Map',
     inputsLabel: 'Inputs / Conditions',
     outputsLabel: 'Outputs / Effects',
     mechanismsLabel: 'Mechanism & Side Effects',
@@ -257,6 +259,16 @@ function IconLegend() {
       <path d="M10 12h10" />
       <circle cx="5" cy="18" r="1.4" fill="currentColor" stroke="none" />
       <path d="M10 18h7" />
+    </StrokeIcon>
+  );
+}
+
+function IconMiniMap() {
+  return (
+    <StrokeIcon>
+      {/* 外框代表全图，内框代表视口 */}
+      <rect x="2" y="4" width="20" height="16" rx="1.5" />
+      <rect x="12" y="10" width="8" height="6" rx="1" fill="currentColor" fillOpacity="0.18" />
     </StrokeIcon>
   );
 }
@@ -833,16 +845,49 @@ function pngFileName(title) {
   return `${(cleaned || 'atlas').slice(0, 80)}.png`;
 }
 
-async function exportVisibleCanvas(container, title) {
+async function exportVisibleCanvas(container, title, rf) {
   const flow = container.querySelector('.react-flow');
   if (!flow) return;
-  const width = Math.round(container.clientWidth);
-  const height = Math.round(container.clientHeight);
+  if (!rf) { console.error('[Atlas] exportVisibleCanvas: rf instance is null, export skipped'); return; }
+
+  // 计算所有节点的边界框（流坐标）
+  const nodes = rf.getNodes();
+  if (nodes.length === 0) return;
+
+  const PAD = 40; // 四周留白（流坐标 px）
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of nodes) {
+    const x = n.position.x;
+    const y = n.position.y;
+    const w = n.measured?.width ?? n.width ?? 240;
+    const h = n.measured?.height ?? n.height ?? 120;
+    if (x - PAD < minX) minX = x - PAD;
+    if (y - PAD < minY) minY = y - PAD;
+    if (x + w + PAD > maxX) maxX = x + w + PAD;
+    if (y + h + PAD > maxY) maxY = y + h + PAD;
+  }
+
+  const graphW = maxX - minX;
+  const graphH = maxY - minY;
+
+  // 选取合适的缩放比：让整张图放进 2× 像素尺寸（上限 2 倍显示像素）
+  const MAX_PX = 3200;
   const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
+  const scale = Math.min(1, MAX_PX / Math.max(graphW, graphH));
+  const imgW = Math.round(graphW * scale);
+  const imgH = Math.round(graphH * scale);
+
+  // 保存当前视口，临时切到覆盖全图的视口
+  const prevViewport = rf.getViewport();
+  rf.setViewport({ x: -minX * scale, y: -minY * scale, zoom: scale }, { duration: 0 });
+
+  // 等一帧让 DOM 更新
+  await new Promise((r) => requestAnimationFrame(r));
+
   const dataUrl = await toPng(flow, {
     backgroundColor: '#fafafa',
-    width,
-    height,
+    width: imgW,
+    height: imgH,
     pixelRatio,
     skipFonts: true,
     filter: (node) => {
@@ -853,6 +898,10 @@ async function exportVisibleCanvas(container, title) {
         && !className.contains('react-flow__attribution');
     },
   });
+
+  // 恢复原视口
+  rf.setViewport(prevViewport, { duration: 0 });
+
   const link = document.createElement('a');
   link.href = dataUrl;
   link.download = pngFileName(title);
@@ -883,6 +932,7 @@ function AtlasCanvasApp({ data }) {
   const [expandedIds, setExpandedIds] = useState(() => new Set());
   const [isLocked, setIsLocked] = useState(true);
   const [showLegend, setShowLegend] = useState(false);
+  const [showMiniMap, setShowMiniMap] = useState(false);
   const [exporting, setExporting] = useState(false);
   const canvasRef = useRef(null);
   const [showScopeModal, setShowScopeModal] = useState(false);
@@ -892,6 +942,9 @@ function AtlasCanvasApp({ data }) {
   const [resetEpoch, setResetEpoch] = useState(0);
 
   const rf = useReactFlow();
+  // onInit 回调拿到的实例是 ReactFlow 完成挂载后的稳定引用，
+  // 专用于 exportVisibleCanvas（避免 context 时序问题导致 rf 为 undefined）
+  const rfInitRef = useRef(null);
   const pendingFocusRef = useRef(null);
 
   const handleToggleExpand = useCallback((nodeId) => {
@@ -1078,6 +1131,10 @@ function AtlasCanvasApp({ data }) {
 
       <header className="atlas-topbar" data-testid="atlas-topbar">
         <div className="atlas-topbar-left">
+           <div className="atlas-title-row">
+            <h1 className="atlas-main-title">{meta.title}</h1>
+            {meta.subtitle && <p className="atlas-subtitle">{meta.subtitle}</p>}
+          </div>
           <div className="atlas-top-badges">
             {meta.parentMapHtml && (
               <a
@@ -1112,10 +1169,6 @@ function AtlasCanvasApp({ data }) {
               </span>
             )}
           </div>
-          <div className="atlas-title-row">
-            <h1 className="atlas-main-title">{meta.title}</h1>
-            {meta.subtitle && <p className="atlas-subtitle">{meta.subtitle}</p>}
-          </div>
         </div>
 
         <div className="atlas-topbar-right">
@@ -1135,11 +1188,6 @@ function AtlasCanvasApp({ data }) {
           )}
         </div>
       </header>
-
-      <p className="atlas-score-reminder" data-testid="score-reminder">
-        {t.scoreIntent} {t.scoreOptions} {t.scoreHowto}
-      </p>
-
       <div className="atlas-toolbar-row">
         <div className="atlas-streams-bar" data-testid="stream-filter-bar">
           {streams.length > 1 && (
@@ -1312,6 +1360,17 @@ function AtlasCanvasApp({ data }) {
             </button>
             <button
               type="button"
+              data-testid="btn-minimap"
+              aria-pressed={showMiniMap}
+              aria-label={t.miniMap}
+              title={t.miniMap}
+              className={`atlas-ctrl-btn ${showMiniMap ? 'active' : ''}`}
+              onClick={() => setShowMiniMap((v) => !v)}
+            >
+              <IconMiniMap />
+            </button>
+            <button
+              type="button"
               data-testid="btn-export-png"
               aria-label={t.exportPng}
               title={t.exportPng}
@@ -1321,7 +1380,7 @@ function AtlasCanvasApp({ data }) {
                 if (!canvasRef.current || exporting) return;
                 setExporting(true);
                 try {
-                  await exportVisibleCanvas(canvasRef.current, meta.title);
+                  await exportVisibleCanvas(canvasRef.current, meta.title, rfInitRef.current ?? rf);
                 } finally {
                   setExporting(false);
                 }
@@ -1376,9 +1435,10 @@ function AtlasCanvasApp({ data }) {
             minZoom={0.15}
             maxZoom={2.5}
             proOptions={{ hideAttribution: true }}
+            onInit={(inst) => { rfInitRef.current = inst; }}
           >
             <Background gap={22} size={1} color="#e4e4e7" />
-            {!isCompact && (
+            {showMiniMap && (
               <MiniMap
                 pannable
                 zoomable

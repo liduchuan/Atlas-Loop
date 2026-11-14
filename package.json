@@ -19,7 +19,9 @@
   "scripts": {
     "dev": "node template/dev-server.mjs",
     "build:shell": "node template/build-shell.mjs",
-    "test": "node scripts/test_profile.mjs"
+    "test": "node scripts/test_profile.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "files": [
     "SKILL.md",
@@ -41,6 +43,7 @@
   ],
   "devDependencies": {
     "@dagrejs/dagre": "^1.1.8",
+    "@playwright/test": "^1.49.0",
     "@xyflow/react": "^12.12.1",
     "esbuild": "^0.25.0",
     "html-to-image": "^1.11.13",
