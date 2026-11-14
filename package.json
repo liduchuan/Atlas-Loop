@@ -1,6 +1,6 @@
 {
   "name": "@liduchuan/atlas-loop",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Atlas Loop —— 通用的递归学习地图 Agent Skill：把任何陌生主题拆解为独立离线的交互式 HTML 地图，并为每个节点配上深入探究与递归子图提示。",
   "type": "module",
   "license": "MIT",
