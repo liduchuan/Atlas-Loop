@@ -81,7 +81,8 @@ node <skill_dir>/scripts/profile.mjs read --domain "餐饮/厨师/粤菜" --mode
    - 为最值得追问的节点与脉络附加 `deepDive`（至少一个），让学习者永远不会卡在「接下来该问什么」上：
      - `hoverHint`：一句简短的话，点明此节点之下隐藏的复杂性或微妙之处。
      - `askPrompts`：1–2 个精准的追问，锚定该节点的具体机制、边界情况、权衡或 `unverified` 项（适用时附精确的 file:line、命令或章节锚点）。**绝不写「详细解释 X」之类的泛泛填充。**
-     - `subAtlasPrompt`：一段可直接复制的递归提示，将该节点命名为新的 `drillDownTarget`，并以当前输出的 HTML 文件名作为 `parentMapHtml`。
+     - `subAtlasPrompt`：一段可直接复制的递归提示，将该节点命名为新的 `drillDownTarget`，并以当前输出的 HTML 文件名作为 `parentMapHtml`。子图生成后，在父图该节点的 `deepDive` 中追加 `childAtlasUrl`（见下条）；追加后 UI 自动以"进入子图"链接替代此生成提示词。
+     - `childAtlasUrl`：子图已生成后填入其 HTML 文件名（如 `espresso-pressure-curve-atlas.html`）。与 `subAtlasPrompt` 共存时，UI 优先显示"进入子图"链接并隐藏生成提示词。**生成子图后须将此字段追加到父图对应节点，并重新构建父图。**
    - 主干只到 `meta.depth` 就停，剩下的复杂度全部压在这里——这是深图不靠堆节点也能继续深入的方式。
 5. **嵌入当前模型名称**:
    - 将 `meta.generatedByModel` 直接设置为你自己的当前模型名称——绝不为此添加配置开关或环境探测代码。这个字段也是评分分层的依据。

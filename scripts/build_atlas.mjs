@@ -197,7 +197,7 @@ function validateAndEnrich(data) {
 
     if (n.deepDive) {
       const asks = Array.isArray(n.deepDive.askPrompts) ? n.deepDive.askPrompts : [];
-      if (asks.length > 0 || n.deepDive.subAtlasPrompt) deepDiveNodeCount++;
+      if (asks.length > 0 || n.deepDive.subAtlasPrompt || n.deepDive.childAtlasUrl) deepDiveNodeCount++;
       for (const ap of asks) {
         const text = String(ap.prompt || '').trim();
         if (text.length < 20) {
@@ -252,7 +252,7 @@ function validateAndEnrich(data) {
   if (deepDiveNodeCount === 0) {
     const streamDiveCount = streams.filter((s) => {
       const asks = Array.isArray(s.deepDive?.askPrompts) ? s.deepDive.askPrompts : [];
-      return asks.length > 0 || s.deepDive?.subAtlasPrompt;
+      return asks.length > 0 || s.deepDive?.subAtlasPrompt || s.deepDive?.childAtlasUrl;
     }).length;
     if (streamDiveCount === 0) {
       errors.push('至少要有一个节点或一条脉络提供 deepDive 提示（↳ 循环提示）');

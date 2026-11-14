@@ -42,6 +42,8 @@ const I18N_DICT = {
     deepDiveModalTitle: '继续深潜（Atlas Loop）',
     tabAsk: '定向追问',
     tabRecursive: '递归生成子地图',
+    tabChildAtlas: '进入子图',
+    openChildAtlas: '打开已生成的子图',
     copyBtn: '复制提示词',
     copiedBtn: '已复制',
     copySnippet: '复制片段',
@@ -105,6 +107,8 @@ const I18N_DICT = {
     deepDiveModalTitle: 'Deep Dive (Atlas Loop)',
     tabAsk: 'Follow-Up Prompts',
     tabRecursive: 'Recursive Sub-Atlas',
+    tabChildAtlas: 'Child Atlas',
+    openChildAtlas: 'Open Generated Child Atlas',
     copyBtn: 'Copy Prompt',
     copiedBtn: 'Copied',
     copySnippet: 'Copy Snippet',
@@ -471,7 +475,9 @@ function AtlasNode({ id, data, selected }) {
   const dotColor = ROLE_DOT_COLORS[roleKey];
   const hasDeepDive = Boolean(
     item.deepDive &&
-      ((Array.isArray(item.deepDive.askPrompts) && item.deepDive.askPrompts.length > 0) || item.deepDive.subAtlasPrompt)
+      ((Array.isArray(item.deepDive.askPrompts) && item.deepDive.askPrompts.length > 0) ||
+        item.deepDive.subAtlasPrompt ||
+        item.deepDive.childAtlasUrl)
   );
   const anchorCount = Array.isArray(item.anchors) ? item.anchors.length : 0;
 
@@ -624,6 +630,10 @@ function DeepDiveModal({ target, t, onClose }) {
 
   const askPrompts = Array.isArray(target.deepDive.askPrompts) ? target.deepDive.askPrompts : [];
   const subPrompt = target.deepDive.subAtlasPrompt || '';
+  const childAtlasUrl = target.deepDive.childAtlasUrl || '';
+  // childAtlasUrl 存在时用"进入子图"替代生成提示词；两者互斥展示
+  const showChildLink = Boolean(childAtlasUrl);
+  const showRecursiveTab = !showChildLink && Boolean(subPrompt);
 
   return (
     <div
@@ -668,7 +678,7 @@ function DeepDiveModal({ target, t, onClose }) {
           >
             {t.tabAsk} ({askPrompts.length})
           </button>
-          {subPrompt && (
+          {(showChildLink || showRecursiveTab) && (
             <button
               type="button"
               role="tab"
@@ -677,7 +687,7 @@ function DeepDiveModal({ target, t, onClose }) {
               className={`atlas-tab-btn ${tab === 'recursive' ? 'active' : ''}`}
               onClick={() => setTab('recursive')}
             >
-              {t.tabRecursive}
+              {showChildLink ? t.tabChildAtlas : t.tabRecursive}
             </button>
           )}
         </div>
@@ -702,7 +712,22 @@ function DeepDiveModal({ target, t, onClose }) {
             </div>
           )}
 
-          {tab === 'recursive' && subPrompt && (
+          {tab === 'recursive' && showChildLink && (
+            <div className="atlas-prompt-card" data-testid="child-atlas-card">
+              <div className="atlas-prompt-card-head">
+                <strong translate="no">Atlas Loop · L1+</strong>
+              </div>
+              <a
+                href={childAtlasUrl}
+                data-testid="child-atlas-link"
+                className="atlas-child-atlas-link"
+              >
+                {t.openChildAtlas}
+              </a>
+            </div>
+          )}
+
+          {tab === 'recursive' && showRecursiveTab && (
             <div className="atlas-prompt-card" data-testid="recursive-prompt-card">
               <p className="atlas-hint-p">{t.recursiveUsageHint}</p>
               <div className="atlas-prompt-card-head">
@@ -1119,7 +1144,9 @@ function AtlasCanvasApp({ data }) {
             const isActive = activeStream === st.id;
             const hasStreamDive = Boolean(
               st.deepDive &&
-                ((st.deepDive.askPrompts && st.deepDive.askPrompts.length > 0) || st.deepDive.subAtlasPrompt)
+                ((st.deepDive.askPrompts && st.deepDive.askPrompts.length > 0) ||
+                  st.deepDive.subAtlasPrompt ||
+                  st.deepDive.childAtlasUrl)
             );
             return (
               <div key={st.id} className={`atlas-stream-pill-group ${isActive ? 'active' : ''}`}>
