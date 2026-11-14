@@ -1,0 +1,135 @@
+{
+  "schemaVersion": "2.0",
+  "meta": {
+    "title": "平刀与锥刀粉碎几何学与粒径控制",
+    "subtitle": "从刀盘几何到双峰粒径分布与风味表现的因果链",
+    "subjectTag": "食品物理 / 冲煮技艺",
+    "language": "zh-CN",
+    "generatedByModel": "Atlas Loop Preview (child demo)",
+    "level": 1,
+    "depth": 3,
+    "depthReason": "刀盘几何 → 破碎路径 → 粒径分布 → 风味表现，三步主干可达，无需补中间环节",
+    "audience": "已会用半自动咖啡机、想弄明白为什么好喝或难喝的人",
+    "drillDownTarget": "平刀与锥刀粉碎几何学与粒径控制",
+    "parentMapHtml": "/",
+    "editor": "vscode",
+    "uncoveredScopes": [
+      "磨豆机电机扭矩与热量积累对粒径一致性的影响未在此展开"
+    ],
+    "unverifiedNotes": []
+  },
+  "streams": [
+    {
+      "id": "stream-geometry",
+      "title": "刀盘几何与破碎路径",
+      "summary": "平刀多次切削 vs 锥刀挤压破碎的机制差异及其对粒径分布的影响",
+      "learningOrder": ["n-flat-geometry", "n-conical-geometry", "n-bimodal", "n-flavor"]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n-flat-geometry",
+      "streamIds": ["stream-geometry"],
+      "role": "entry",
+      "title": "平刀：多次切削，主峰窄",
+      "summary": "高同心度平刀让咖啡豆经过多条对齐刀缝反复切断，粉碎路径短而集中",
+      "whyItMatters": "切削路径一致，主粒径峰更窄，风味溶出速率均匀，细粉比例相对可控",
+      "confidence": "verified",
+      "anchors": [
+        {
+          "kind": "snippet",
+          "label": "典型主峰宽度",
+          "content": "高端平刀磨（如 Mazzer Kony）主峰 D50 约 300–400 μm，峰宽较窄"
+        }
+      ],
+      "deepDive": {
+        "hoverHint": "同心度误差如何把窄峰变成宽峰",
+        "askPrompts": [
+          {
+            "title": "平刀同心度公差与粒径一致性的关系",
+            "prompt": "平刀磨的核心优势在于刀缝对齐度，但当上下刀盘同心度误差超过 0.05 mm 时，主粒径峰会如何展宽？请结合刀缝间隙变化说明为什么消费级平刀的粒径分布往往不如商用级稳定。"
+          }
+        ],
+        "subAtlasPrompt": "使用 Atlas Loop 递归生成 L2 专题子地图，目标：「平刀同心度公差与粒径峰宽」，父级地图 espresso-grind-geometry-atlas.html"
+      }
+    },
+    {
+      "id": "n-conical-geometry",
+      "streamIds": ["stream-geometry"],
+      "role": "core",
+      "title": "锥刀：挤压破碎，双峰宽",
+      "summary": "内锥与外锥间隙渐变，豆粒在通道中经历压缩-剪切复合力，破碎路径较长",
+      "whyItMatters": "复合力场使粒径分布更宽，双峰更明显，细粉比例通常高于同档平刀",
+      "confidence": "verified",
+      "anchors": [
+        {
+          "kind": "snippet",
+          "label": "典型双峰结构",
+          "content": "锥刀磨通常呈现主峰（250–600 μm）与细粉峰（< 100 μm）明显分离的双峰分布"
+        }
+      ],
+      "deepDive": {
+        "hoverHint": "锥刀转速与细粉生成量的权衡",
+        "askPrompts": [
+          {
+            "title": "锥刀低转速如何减少细粉并影响风味",
+            "prompt": "锥刀磨普遍以低转速（300–600 RPM）运行。请解释低转速如何通过减少摩擦热和二次破碎来降低细粉比例，以及细粉减少后萃取率和口感厚度会如何变化。"
+          }
+        ],
+        "subAtlasPrompt": "使用 Atlas Loop 递归生成 L2 专题子地图，目标：「锥刀转速、热量与细粉生成」，父级地图 espresso-grind-geometry-atlas.html"
+      }
+    },
+    {
+      "id": "n-bimodal",
+      "streamIds": ["stream-geometry"],
+      "role": "mechanism",
+      "title": "双峰分布：主粒径峰 + 细粉峰",
+      "summary": "意式研磨的粒径分布普遍呈双峰：粗颗粒决定渗流阻力，细粉填充孔隙并放大萃取率",
+      "whyItMatters": "细粉比例是调节萃取率与口感厚度的隐性旋钮，调研磨刻度时细粉的变化往往比主峰位移更显著",
+      "confidence": "verified",
+      "anchors": [
+        {
+          "kind": "snippet",
+          "label": "细粉的双重作用",
+          "content": "细粉（< 100 μm）：填充粗颗粒间孔隙 → 提升粉床渗流阻力 + 比表面积激增 → 加速溶出"
+        }
+      ]
+    },
+    {
+      "id": "n-flavor",
+      "streamIds": ["stream-geometry"],
+      "role": "outcome",
+      "title": "风味清晰度 vs 厚重感的权衡",
+      "summary": "窄主峰（平刀倾向）带来更高风味分离度与清晰酸甜；宽双峰（锥刀倾向）带来更圆润厚重的触感",
+      "whyItMatters": "选刀型不只是设备偏好，而是在风味风格上做出的系统性取舍",
+      "confidence": "verified",
+      "anchors": [
+        {
+          "kind": "snippet",
+          "label": "选刀型参考",
+          "content": "追求明亮果酸与花香分离 → 高同心度平刀；追求醇厚奶油感与圆润平衡 → 低转速锥刀"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "n-flat-geometry",
+      "target": "n-bimodal",
+      "label": "主峰窄、细粉少"
+    },
+    {
+      "id": "e2",
+      "source": "n-conical-geometry",
+      "target": "n-bimodal",
+      "label": "双峰宽、细粉多"
+    },
+    {
+      "id": "e3",
+      "source": "n-bimodal",
+      "target": "n-flavor",
+      "label": "细粉比例决定厚重感"
+    }
+  ]
+}

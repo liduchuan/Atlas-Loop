@@ -540,6 +540,19 @@ function AtlasNode({ id, data, selected }) {
         {item.summary && <div className="atlas-node-summary">{item.summary}</div>}
       </div>
 
+      {item.deepDive?.childAtlasUrl && (
+        <a
+          href={item.deepDive.childAtlasUrl}
+          data-testid="node-child-atlas-link"
+          className="atlas-node-child-link nodrag nopan"
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          ↳ {t.tabChildAtlas}
+        </a>
+      )}
+
       {(detailCount > 0 || anchorCount > 0) && (
         <div className="atlas-node-footer nodrag nopan">
           {detailCount > 0 ? (

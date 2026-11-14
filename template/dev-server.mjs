@@ -126,7 +126,18 @@ async function start() {
       return;
     }
 
-    const rawData = fs.readFileSync(args.data, 'utf8');
+    // ?data=xxx.json 切换数据文件（仅限 template 目录内的 .json，防止路径穿越）
+    let dataPath = args.data;
+    const dataParam = url.searchParams.get('data');
+    if (dataParam) {
+      const safeName = path.basename(dataParam);
+      if (safeName.endsWith('.json')) {
+        const candidate = path.join(__dirname, safeName);
+        if (fs.existsSync(candidate)) dataPath = candidate;
+      }
+    }
+
+    const rawData = fs.readFileSync(dataPath, 'utf8');
     const parsed = JSON.parse(rawData);
     const safeJson = JSON.stringify(parsed).replace(/</g, '\\u003c');
 

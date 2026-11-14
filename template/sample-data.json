@@ -84,7 +84,8 @@
             "prompt": "从磨豆机粉碎路径（多次切削 vs 挤压破碎）分析：为什么高同心度平刀通常呈现更窄的主峰与更高风味分离度，而锥刀往往带来更宽的双峰与更圆润厚重的触感？"
           }
         ],
-        "subAtlasPrompt": "使用 Atlas Loop 递归生成 L1 专题子地图，目标：「平刀与锥刀粉碎几何学与粒径控制」，父级地图 espresso-extraction-atlas.html"
+        "subAtlasPrompt": "使用 Atlas Loop 递归生成 L1 专题子地图，目标：「平刀与锥刀粉碎几何学与粒径控制」，父级地图 espresso-extraction-atlas.html",
+        "childAtlasUrl": "/?data=sample-data-child.json"
       }
     },
     {
