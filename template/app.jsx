@@ -33,6 +33,8 @@ const I18N_DICT = {
     reset: '重置',
     legend: '图例',
     exportPng: '导出 PNG',
+    exportZip: '导出 ZIP',
+    exportZipFailed: 'ZIP 导出失败，请刷新页面后重试。',
     scopeNotes: '范围与待确认',
     learningPath: '推荐顺序',
     expandDetail: '展开细节',
@@ -99,6 +101,8 @@ const I18N_DICT = {
     reset: 'Reset',
     legend: 'Legend',
     exportPng: 'Export PNG',
+    exportZip: 'Export ZIP',
+    exportZipFailed: 'ZIP export failed. Refresh the page and try again.',
     scopeNotes: 'Scope & Notes',
     learningPath: 'Learning Order',
     expandDetail: 'Details',
@@ -273,7 +277,19 @@ function IconMiniMap() {
   );
 }
 
+function IconExportPng() {
+  // 图片图标：矩形边框 + 圆圈 + 山峰线条
+  return (
+    <StrokeIcon>
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+      <circle cx="9" cy="9" r="1.5" />
+      <path d="m3 18 5-5.5 4 4 3-3.5 7 5" />
+    </StrokeIcon>
+  );
+}
+
 function IconExport() {
+  // 通用下载箭头，用于 ZIP 导出
   return (
     <StrokeIcon>
       <path d="M12 3v12" />
@@ -323,6 +339,243 @@ function fallbackCopy(text) {
   }
   document.body.removeChild(ta);
   return true;
+}
+
+// ── 视口 & 交互状态缓存（从子图返回时恢复位置）────────────────────────
+const _STATE_KEY = 'atlas-state:' + location.href;
+function _loadSavedState() {
+  try { return JSON.parse(sessionStorage.getItem(_STATE_KEY) || 'null'); }
+  catch { return null; }
+}
+function _saveState(s) {
+  try { sessionStorage.setItem(_STATE_KEY, JSON.stringify(s)); } catch {}
+}
+// 页面加载时读取一次；pagehide 时写入
+const _savedState = _loadSavedState();
+
+// ── 最小 CRC-32 + Store-only ZIP 打包（无需第三方库）──────────────────
+const _CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let j = 0; j < 8; j++) c = c & 1 ? (0xedb88320 ^ (c >>> 1)) : c >>> 1;
+    t[i] = c;
+  }
+  return t;
+})();
+
+function _crc32(buf) {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = (c >>> 8) ^ _CRC_TABLE[(c ^ buf[i]) & 0xff];
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function _buildZip(files) {
+  // files: Array<{ name: string, bytes: Uint8Array }>
+  const enc = new TextEncoder();
+  const localParts = [];
+  const cdParts = [];
+  let off = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name);
+    const data = f.bytes;
+    const crc = _crc32(data);
+    const lh = new DataView(new ArrayBuffer(30 + name.length));
+    lh.setUint32(0, 0x04034b50, true); // 本地文件头签名
+    lh.setUint16(4, 20, true);         // 所需版本
+    lh.setUint16(6, 0x0800, true);     // 文件名使用 UTF-8
+    lh.setUint16(8, 0, true);          // 压缩方法: 0 = Store
+    lh.setUint16(10, 0, true); lh.setUint16(12, 0, true); // 修改时间/日期
+    lh.setUint32(14, crc, true);
+    lh.setUint32(18, data.length, true);
+    lh.setUint32(22, data.length, true);
+    lh.setUint16(26, name.length, true);
+    lh.setUint16(28, 0, true);
+    new Uint8Array(lh.buffer, 30).set(name);
+    const cd = new DataView(new ArrayBuffer(46 + name.length));
+    cd.setUint32(0, 0x02014b50, true); // 中央目录头签名
+    cd.setUint16(4, 20, true); cd.setUint16(6, 20, true);
+    cd.setUint16(8, 0x0800, true); cd.setUint16(10, 0, true);
+    cd.setUint16(12, 0, true); cd.setUint16(14, 0, true);
+    cd.setUint32(16, crc, true);
+    cd.setUint32(20, data.length, true); cd.setUint32(24, data.length, true);
+    cd.setUint16(28, name.length, true);
+    cd.setUint16(30, 0, true); cd.setUint16(32, 0, true);
+    cd.setUint16(34, 0, true); cd.setUint16(36, 0, true);
+    cd.setUint32(38, 0, true); cd.setUint32(42, off, true);
+    new Uint8Array(cd.buffer, 46).set(name);
+    localParts.push(new Uint8Array(lh.buffer), data);
+    cdParts.push(new Uint8Array(cd.buffer));
+    off += 30 + name.length + data.length;
+  }
+  const cdSize = cdParts.reduce((s, b) => s + b.length, 0);
+  const eocd = new DataView(new ArrayBuffer(22));
+  eocd.setUint32(0, 0x06054b50, true); // 结束中央目录签名
+  eocd.setUint16(4, 0, true); eocd.setUint16(6, 0, true);
+  eocd.setUint16(8, files.length, true); eocd.setUint16(10, files.length, true);
+  eocd.setUint32(12, cdSize, true); eocd.setUint32(16, off, true);
+  eocd.setUint16(20, 0, true);
+  const all = [...localParts, ...cdParts, new Uint8Array(eocd.buffer)];
+  const total = all.reduce((s, b) => s + b.length, 0);
+  const out = new Uint8Array(total);
+  let pos = 0;
+  for (const b of all) { out.set(b, pos); pos += b.length; }
+  return out;
+}
+
+function _safeFileName(title) {
+  return String(title || 'atlas')
+    .replace(/[\\/:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80) || 'atlas';
+}
+
+async function _exportZip(data, meta) {
+  const enc = new TextEncoder();
+  const files = [];
+  const curTitle = _safeFileName(meta.title);
+
+  // ── CSS ──────────────────────────────────────────────────────────
+  // 按页面顺序收集内联和外部 CSS。即使有其他代码注入 <style>，也不能漏掉模板的样式表。
+  const cssParts = [];
+  for (const el of document.querySelectorAll('head style, head link[rel~="stylesheet"]')) {
+    if (el.tagName === 'STYLE') {
+      cssParts.push(el.textContent || '');
+    } else {
+      const res = await fetch(el.href);
+      if (!res.ok) throw new Error(`无法读取样式表：${el.href} (${res.status})`);
+      cssParts.push(await res.text());
+    }
+  }
+  let styles = cssParts.join('\n');
+  if (!styles.includes('.react-flow') || !styles.includes('.atlas-topbar')) {
+    throw new Error('ZIP 导出缺少地图样式，请刷新页面后重试');
+  }
+  // 防止 CSS 内容意外截断 style 标签
+  styles = styles.replace(/<\/style/gi, '<\\/style');
+
+  // ── App JS ───────────────────────────────────────────────────────
+  // 生产包：JS 内联在无 src / 无 type / 无 id 的 <script> 里
+  // 开发模式：JS 以 <script src="/__bundle.js"> 外部文件加载
+  let appScript = '';
+  // 生产包：App JS 是内联的大型脚本（>10 KB），开发模式注入的 SSE 热更新脚本只有几百字节
+  const inlineScriptEl = Array.from(document.querySelectorAll('body script'))
+    .find(s => !s.type && !s.id && !s.src && s.textContent.length > 10_000);
+  if (inlineScriptEl) {
+    appScript = inlineScriptEl.textContent;
+  } else {
+    const extScriptEl = Array.from(document.querySelectorAll('body script'))
+      .find(s => !s.type && !s.id && s.src);
+    if (extScriptEl) {
+      const res = await fetch(extScriptEl.src);
+      if (!res.ok) throw new Error(`无法读取地图脚本：${extScriptEl.src} (${res.status})`);
+      appScript = await res.text();
+    }
+  }
+  if (!appScript.trim()) throw new Error('ZIP 导出缺少地图脚本，请刷新页面后重试');
+  // 防止脚本内容意外截断 script 标签（开发包不含此转义，需手动补）
+  appScript = appScript.replace(/<\/script/gi, '<\\/script');
+
+  function _buildHtml(atlasData) {
+    const title = String(atlasData.meta?.title || 'Atlas')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const lang = String(atlasData.meta?.language || 'zh').split('-')[0];
+    // 防止 JSON 内容意外截断 script 标签
+    const dataJson = JSON.stringify(atlasData).replace(/<\//g, '<\\/');
+    return [
+      '<!DOCTYPE html>',
+      '<html lang="' + lang + '">',
+      '<head>',
+      '  <meta charset="UTF-8" />',
+      '  <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
+      '  <meta name="theme-color" content="#fafafa" />',
+      '  <title>' + title + '</title>',
+      '  <style>' + styles + '</style>',
+      '</head>',
+      '<body>',
+      '  <div id="root"></div>',
+      '  <script id="atlas-data-json" type="application/json">' + dataJson + '</script>',
+      '  <script>' + appScript + '</script>',
+      '</body>',
+      '</html>',
+    ].join('\n');
+  }
+
+  // 遍历子图，把开发预览的 ?data=... 和线上 HTML 都转成 ZIP 内的独立页面。
+  // 用 URL 查重，用标题命名文件；链接在数据中改为相对文件名。
+  const pageUrl = new URL(location.href);
+  pageUrl.hash = '';
+  const records = [{
+    url: pageUrl.href,
+    name: curTitle + '.html',
+    data: JSON.parse(JSON.stringify(data)),
+    discoveredFrom: null,
+  }];
+  const byUrl = new Map([[pageUrl.href, records[0]]]);
+  const usedNames = new Set([records[0].name]);
+  const deepDives = (atlasData) => [...(atlasData.nodes || []), ...(atlasData.streams || [])]
+    .map(item => item.deepDive)
+    .filter(Boolean);
+  const resolveUrl = (value, base) => {
+    try {
+      const url = new URL(value, base);
+      url.hash = '';
+      return url.href;
+    } catch { return null; }
+  };
+
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+    for (const dive of deepDives(record.data)) {
+      if (!dive.childAtlasUrl) continue;
+      const childUrl = resolveUrl(dive.childAtlasUrl, record.url);
+      if (!childUrl || byUrl.has(childUrl)) continue;
+      try {
+        const res = await fetch(childUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const childDoc = new DOMParser().parseFromString(await res.text(), 'text/html');
+        const payload = childDoc.getElementById('atlas-data-json')?.textContent;
+        if (!payload || payload.includes('__ATLAS_DATA_JSON__')) throw new Error('缺少子图数据');
+        const childData = JSON.parse(payload);
+        if (!childData.meta?.title || !Array.isArray(childData.nodes)) throw new Error('子图数据无效');
+
+        const baseName = _safeFileName(childData.meta.title);
+        let name = baseName + '.html';
+        for (let suffix = 2; usedNames.has(name); suffix++) name = `${baseName}-${suffix}.html`;
+        usedNames.add(name);
+        const child = { url: childUrl, name, data: childData, discoveredFrom: record.url };
+        records.push(child);
+        byUrl.set(childUrl, child);
+      } catch (error) {
+        console.warn('[Atlas] Skipped child Atlas in ZIP:', childUrl, error);
+      }
+    }
+  }
+
+  for (const record of records) {
+    for (const dive of deepDives(record.data)) {
+      if (!dive.childAtlasUrl) continue;
+      const target = byUrl.get(resolveUrl(dive.childAtlasUrl, record.url));
+      if (target) dive.childAtlasUrl = encodeURIComponent(target.name);
+      else delete dive.childAtlasUrl; // 不在 ZIP 中时避免出现无效的 file:// 链接
+    }
+    if (record.data.meta) {
+      const parentUrl = record.data.meta.parentMapHtml
+        ? resolveUrl(record.data.meta.parentMapHtml, record.url) : null;
+      const parent = byUrl.get(parentUrl) || byUrl.get(record.discoveredFrom);
+      record.data.meta.parentMapHtml = parent ? encodeURIComponent(parent.name) : null;
+    }
+    files.push({ name: record.name, bytes: enc.encode(_buildHtml(record.data)) });
+  }
+
+  const zipBytes = _buildZip(files);
+  const blob = new Blob([zipBytes], { type: 'application/zip' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = curTitle + '.zip';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
 }
 
 function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
@@ -854,7 +1107,7 @@ async function exportVisibleCanvas(container, title, rf) {
   const nodes = rf.getNodes();
   if (nodes.length === 0) return;
 
-  const PAD = 40; // 四周留白（流坐标 px）
+  const PAD = 40;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const n of nodes) {
     const x = n.position.x;
@@ -870,18 +1123,27 @@ async function exportVisibleCanvas(container, title, rf) {
   const graphW = maxX - minX;
   const graphH = maxY - minY;
 
-  // 选取合适的缩放比：让整张图放进 2× 像素尺寸（上限 2 倍显示像素）
   const MAX_PX = 3200;
   const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
   const scale = Math.min(1, MAX_PX / Math.max(graphW, graphH));
   const imgW = Math.round(graphW * scale);
   const imgH = Math.round(graphH * scale);
 
-  // 保存当前视口，临时切到覆盖全图的视口
+  // 在画布容器上叠一个遮罩，用户看不到视口变换的跳动；
+  // toPng 只捕获 flow 自身，遮罩是兄弟节点，不会进入截图。
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:absolute;inset:0;z-index:9999;background:var(--bg-canvas,#fafafa);pointer-events:none;';
+  const prevPos = container.style.position;
+  if (!prevPos || prevPos === 'static') container.style.position = 'relative';
+  container.appendChild(overlay);
+
+  // 等遮罩先渲染出来，再改视口
+  await new Promise((r) => requestAnimationFrame(r));
+
   const prevViewport = rf.getViewport();
   rf.setViewport({ x: -minX * scale, y: -minY * scale, zoom: scale }, { duration: 0 });
 
-  // 等一帧让 DOM 更新
+  // 等视口变换写入 DOM
   await new Promise((r) => requestAnimationFrame(r));
 
   const dataUrl = await toPng(flow, {
@@ -899,8 +1161,10 @@ async function exportVisibleCanvas(container, title, rf) {
     },
   });
 
-  // 恢复原视口
+  // 恢复视口，移除遮罩
   rf.setViewport(prevViewport, { duration: 0 });
+  container.removeChild(overlay);
+  if (!prevPos || prevPos === 'static') container.style.position = prevPos;
 
   const link = document.createElement('a');
   link.href = dataUrl;
@@ -928,16 +1192,17 @@ function AtlasCanvasApp({ data }) {
     return set;
   }, [data.nodes]);
 
-  const [activeStream, setActiveStream] = useState('all');
-  const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const [activeStream, setActiveStream] = useState(() => _savedState?.activeStream || 'all');
+  const [expandedIds, setExpandedIds] = useState(() => new Set(_savedState?.expandedIds || []));
   const [isLocked, setIsLocked] = useState(true);
   const [showLegend, setShowLegend] = useState(false);
   const [showMiniMap, setShowMiniMap] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportingZip, setExportingZip] = useState(false);
   const canvasRef = useRef(null);
   const [showScopeModal, setShowScopeModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState(() => _savedState?.selectedId || null);
   const [deepDiveTarget, setDeepDiveTarget] = useState(null);
   const [resetEpoch, setResetEpoch] = useState(0);
 
@@ -1018,6 +1283,20 @@ function AtlasCanvasApp({ data }) {
     }
   }, [nodes, rf]);
 
+  // 页面跳转前（进入子图）保存当前视口与交互状态
+  useEffect(() => {
+    const save = () => {
+      _saveState({
+        selectedId,
+        expandedIds: [...expandedIds],
+        activeStream,
+        viewport: rfInitRef.current?.getViewport() ?? null,
+      });
+    };
+    window.addEventListener('pagehide', save);
+    return () => window.removeEventListener('pagehide', save);
+  }, [selectedId, expandedIds, activeStream]);
+
   const handleFitViewOnly = useCallback(() => {
     rf.fitView({ padding: 0.18, maxZoom: 1, duration: 0 });
   }, [rf]);
@@ -1031,6 +1310,8 @@ function AtlasCanvasApp({ data }) {
     setShowScopeModal(false);
     setIsLocked(true);
     setResetEpoch((c) => c + 1);
+    // 清除缓存，确保下次访问不会误恢复旧状态
+    try { sessionStorage.removeItem(_STATE_KEY); } catch {}
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         rf.fitView({ padding: 0.18, maxZoom: 1, duration: 0 });
@@ -1386,6 +1667,26 @@ function AtlasCanvasApp({ data }) {
                 }
               }}
             >
+              <IconExportPng />
+            </button>
+            <button
+              type="button"
+              data-testid="btn-export-zip"
+              aria-label={t.exportZip}
+              title={t.exportZip}
+              className="atlas-ctrl-btn"
+              disabled={exportingZip}
+              onClick={async () => {
+                if (exportingZip) return;
+                setExportingZip(true);
+                try { await _exportZip(data, meta); }
+                catch (error) {
+                  console.error('[Atlas] ZIP export failed:', error);
+                  window.alert(t.exportZipFailed);
+                }
+                finally { setExportingZip(false); }
+              }}
+            >
               <IconExport />
             </button>
           </div>
@@ -1430,12 +1731,18 @@ function AtlasCanvasApp({ data }) {
             nodesDraggable={!isLocked}
             nodesConnectable={false}
             elementsSelectable={true}
-            fitView
+            fitView={!_savedState?.viewport}
             fitViewOptions={{ padding: 0.18, maxZoom: 1 }}
             minZoom={0.15}
             maxZoom={2.5}
             proOptions={{ hideAttribution: true }}
-            onInit={(inst) => { rfInitRef.current = inst; }}
+            onInit={(inst) => {
+              rfInitRef.current = inst;
+              // 从子图返回时恢复视口，不执行 fitView
+              if (_savedState?.viewport) {
+                requestAnimationFrame(() => inst.setViewport(_savedState.viewport, { duration: 0 }));
+              }
+            }}
           >
             <Background gap={22} size={1} color="#e4e4e7" />
             {showMiniMap && (

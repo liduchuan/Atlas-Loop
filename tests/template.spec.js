@@ -209,6 +209,96 @@ test.describe('子图导航', () => {
 });
 
 // ──────────────────────────────────────────────────────────────
+// 6b. ZIP 导出
+// ──────────────────────────────────────────────────────────────
+test.describe('ZIP 导出', () => {
+  test('点击 ZIP 导出按钮触发下载，ZIP 内含有效 HTML 文件', async ({ page }) => {
+    await page.goto('/');
+    await waitForCanvas(page);
+    // 模拟其他代码向 head 注入样式，外部地图 CSS 仍须完整导出。
+    await page.evaluate(() => {
+      const style = document.createElement('style');
+      style.textContent = 'body { outline-color: transparent; }';
+      document.head.appendChild(style);
+    });
+
+    const downloadPromise = page.waitForEvent('download', { timeout: 20_000 });
+    await page.locator('[data-testid="btn-export-zip"]').click();
+    const download = await downloadPromise;
+
+    // 文件名是 .zip
+    expect(download.suggestedFilename().endsWith('.zip')).toBe(true);
+
+    // 读取 ZIP 字节
+    const zipPath = await download.path();
+    const { readFileSync, statSync, writeFileSync, mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { pathToFileURL } = await import('node:url');
+    const size = statSync(zipPath).size;
+    expect(size).toBeGreaterThan(500); // ZIP 至少 500 B
+
+    // 解析 ZIP 本地文件头，提取所有未压缩的 HTML
+    const buf = readFileSync(zipPath);
+    const entries = new Map();
+    let offset = 0;
+    while (buf.readUInt32LE(offset) === 0x04034b50) {
+      expect(buf.readUInt16LE(offset + 6) & 0x0800).toBe(0x0800); // UTF-8 文件名
+      expect(buf.readUInt16LE(offset + 8)).toBe(0); // Store
+      const fnLen = buf.readUInt16LE(offset + 26);
+      const extraLen = buf.readUInt16LE(offset + 28);
+      const size = buf.readUInt32LE(offset + 18);
+      const name = buf.subarray(offset + 30, offset + 30 + fnLen).toString('utf8');
+      const dataOffset = offset + 30 + fnLen + extraLen;
+      entries.set(name, buf.subarray(dataOffset, dataOffset + size).toString('utf8'));
+      offset = dataOffset + size;
+    }
+    expect(entries.size).toBeGreaterThanOrEqual(2);
+    const [rootName, htmlContent] = entries.entries().next().value;
+    const rootData = JSON.parse(htmlContent.match(/<script id="atlas-data-json" type="application\/json">([\s\S]*?)<\/script>/)[1]);
+    const childLink = rootData.nodes.find(n => n.deepDive?.childAtlasUrl)?.deepDive.childAtlasUrl;
+    const childName = decodeURIComponent(childLink);
+    expect(entries.has(childName)).toBe(true);
+    const childData = JSON.parse(entries.get(childName).match(/<script id="atlas-data-json" type="application\/json">([\s\S]*?)<\/script>/)[1]);
+    expect(decodeURIComponent(childData.meta.parentMapHtml)).toBe(rootName);
+
+    // 导出的 HTML 必须包含关键标记
+    expect(htmlContent).toContain('<!DOCTYPE html>');
+    expect(htmlContent).toContain('<style>');
+    expect(htmlContent).toContain('atlas-data-json');
+    expect(htmlContent).toContain('<script>');
+    // 样式和脚本不应为空（确保 CSS 和 JS 已内联）
+    const styleMatch = htmlContent.match(/<style>([\s\S]*?)<\/style>/);
+    expect(styleMatch).not.toBeNull();
+    expect(styleMatch[1]).toContain('.react-flow');
+    expect(styleMatch[1]).toContain('.atlas-topbar');
+    expect(styleMatch[1]).toContain('--bg-canvas');
+    const scriptContent = htmlContent.match(/<script>([^<]{100,})/);
+    expect(scriptContent).not.toBeNull();
+
+    // 真正从本地文件打开导出的页面，确认离线样式生效。
+    const dir = mkdtempSync(join(tmpdir(), 'atlas-zip-test-'));
+    try {
+      for (const [name, html] of entries) writeFileSync(join(dir, name), html);
+      const rootUrl = pathToFileURL(join(dir, rootName)).href;
+      const childUrl = pathToFileURL(join(dir, childName)).href;
+      await page.goto(rootUrl);
+      await waitForCanvas(page);
+      await expect(page.locator('.atlas-topbar')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+      await page.locator('[data-testid="node-child-atlas-link"]').first().click();
+      await waitForCanvas(page);
+      expect(page.url()).toBe(childUrl);
+      await expect(page.locator('.atlas-main-title')).toHaveText(childData.meta.title);
+      await page.locator('[data-testid="parent-map-link"]').click();
+      await waitForCanvas(page);
+      expect(page.url()).toBe(rootUrl);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ──────────────────────────────────────────────────────────────
 // 7. 锁定/解锁画布
 // ──────────────────────────────────────────────────────────────
 test.describe('锁定/解锁画布', () => {
