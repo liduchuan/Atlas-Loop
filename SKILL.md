@@ -87,6 +87,12 @@ node <skill_dir>/scripts/profile.mjs read --domain "餐饮/厨师/粤菜" --mode
 5. **嵌入当前模型名称**:
    - 将 `meta.generatedByModel` 直接设置为你自己的当前模型名称——绝不为此添加配置开关或环境探测代码。这个字段也是评分分层的依据。
 
+### UI 模板边界
+
+普通地图生成只编写符合 schema 的 `AtlasGraphData`，再用现有 `assets/viewer-shell.html` 构建。`template/app.jsx`、`template/styles.css` 和查看器外壳是固定的 UI 模板；除非用户明确要求修改模板，否则不得改动或另造页面结构、样式、控件、提示区、页脚、装饰文案，也不得在生成后手工改 HTML。`meta.uiLabels` 只用于所需语言的控件翻译，不用来塞主题说明或新增 UI 内容。
+
+主题内容只放在有依据且与学习目标有关的 schema 字段中。不要为了填满画布、平衡卡片高度或“丰富页面”而添加节点、脉络、说明、锚点或追问；内容过长影响排版时，精简文案或按真实因果关系拆分，而不是改模板掩盖问题。用户明确提出 UI 定制时，才修改相应模板文件并重建外壳。
+
 ## 4. 在隔离的 `/tmp` 工作区中构建与验证
 
 所有中间文件都放在 `/tmp/atlas-loop-<timestamp>/` 中处理，保持用户工作目录完全干净：
@@ -117,4 +123,4 @@ node <skill_dir>/scripts/profile.mjs read --domain "餐饮/厨师/粤菜" --mode
 
 `scripts/profile.mjs` 的行为（评分吸附、顶格判定、模型分层、前缀继承）由 `node <skill_dir>/scripts/test_profile.mjs` 覆盖，改动它之前先跑一遍。
 
-*(若需对画布模板本身做 UI 定制或样式调试，运行 `node <skill_dir>/template/dev-server.mjs` 获得实时重载，运行 `node <skill_dir>/template/build-shell.mjs` 重建 `assets/viewer-shell.html`。)*
+*(用户明确要求画布模板的 UI 定制或样式调试时，运行 `node <skill_dir>/template/dev-server.mjs` 获得实时重载，运行 `node <skill_dir>/template/build-shell.mjs` 重建 `assets/viewer-shell.html`。)*
