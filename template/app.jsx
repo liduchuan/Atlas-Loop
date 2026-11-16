@@ -353,6 +353,29 @@ function _saveState(s) {
 // 页面加载时读取一次；pagehide 时写入
 const _savedState = _loadSavedState();
 
+// 布局指纹：节点位置缓存只在「图结构没变」时有效，
+// 展开/收起节点或切换脉络后结构变化，应重新跑 dagre 布局
+function _layoutFingerprint(data, activeStream, expandedIds) {
+  const nodeIds = (data.nodes || []).map((n) => {
+    const expanded = expandedIds.has(n.id) && (n.detailGraph?.nodes?.length || 0) > 0;
+    return expanded ? `${n.id}+` : n.id;
+  });
+  return JSON.stringify([activeStream, nodeIds]);
+}
+
+// 用缓存中用户手动拖动过的位置覆盖 dagre 布局结果
+function _applyCachedPositions(flowNodes, cachedPositions) {
+  if (!cachedPositions) return flowNodes;
+  let hit = false;
+  const next = flowNodes.map((n) => {
+    const p = cachedPositions[n.id];
+    if (!p) return n;
+    hit = true;
+    return { ...n, position: { x: p.x, y: p.y } };
+  });
+  return hit ? next : flowNodes;
+}
+
 // ── 最小 CRC-32 + Store-only ZIP 打包（无需第三方库）──────────────────
 const _CRC_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -1243,7 +1266,25 @@ function AtlasCanvasApp({ data }) {
     [data, activeStream, expandedIds, t, handlers, resetEpoch]
   );
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(computed.nodes);
+  // 用户手动拖动过的节点位置（只在布局指纹一致时从缓存恢复）
+  const layoutFingerprint = _layoutFingerprint(data, activeStream, expandedIds);
+  const movedPositionsRef = useRef(
+    _savedState?.layout === layoutFingerprint ? _savedState.positions || null : null
+  );
+  // 结构变化后旧缓存作废，从空开始重新记录
+  const lastFingerprintRef = useRef(layoutFingerprint);
+  if (lastFingerprintRef.current !== layoutFingerprint) {
+    lastFingerprintRef.current = layoutFingerprint;
+    movedPositionsRef.current = null;
+  }
+
+  const initialNodes = useMemo(
+    () => _applyCachedPositions(computed.nodes, movedPositionsRef.current),
+    // 仅在挂载时计算一次；后续 computed 变化由下方 effect 处理
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(computed.edges);
 
   // 初始状态已经是 computed：挂载时不再重复写入。重复写入会用未测量的节点对象覆盖
@@ -1252,7 +1293,7 @@ function AtlasCanvasApp({ data }) {
   useEffect(() => {
     if (appliedComputedRef.current === computed) return;
     appliedComputedRef.current = computed;
-    setNodes(computed.nodes);
+    setNodes(_applyCachedPositions(computed.nodes, movedPositionsRef.current));
     setEdges(computed.edges);
   }, [computed, setNodes, setEdges]);
 
@@ -1291,11 +1332,19 @@ function AtlasCanvasApp({ data }) {
         expandedIds: [...expandedIds],
         activeStream,
         viewport: rfInitRef.current?.getViewport() ?? null,
+        layout: layoutFingerprint,
+        positions: movedPositionsRef.current,
       });
     };
     window.addEventListener('pagehide', save);
     return () => window.removeEventListener('pagehide', save);
-  }, [selectedId, expandedIds, activeStream]);
+  }, [selectedId, expandedIds, activeStream, layoutFingerprint]);
+
+  // 拖动结束时记录节点位置，下次打开（或重新布局）时恢复
+  const handleNodeDragStop = useCallback((_, node) => {
+    if (!movedPositionsRef.current) movedPositionsRef.current = {};
+    movedPositionsRef.current[node.id] = { x: node.position.x, y: node.position.y };
+  }, []);
 
   const handleFitViewOnly = useCallback(() => {
     rf.fitView({ padding: 0.18, maxZoom: 1, duration: 0 });
@@ -1310,6 +1359,7 @@ function AtlasCanvasApp({ data }) {
     setShowScopeModal(false);
     setIsLocked(true);
     setResetEpoch((c) => c + 1);
+    movedPositionsRef.current = null;
     // 清除缓存，确保下次访问不会误恢复旧状态
     try { sessionStorage.removeItem(_STATE_KEY); } catch {}
     requestAnimationFrame(() => {
@@ -1728,6 +1778,7 @@ function AtlasCanvasApp({ data }) {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeClick={(_, node) => setSelectedId(node.id)}
+            onNodeDragStop={handleNodeDragStop}
             nodesDraggable={!isLocked}
             nodesConnectable={false}
             elementsSelectable={true}
