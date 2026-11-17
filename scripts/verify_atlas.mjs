@@ -158,18 +158,7 @@ async function main() {
     checks.depth = depthShown;
     checks.compactChrome = isCompact;
 
-    // 评分提醒必须是纯文本：提醒用户打分，但不得有任何交互控件或本地存储
-    const reminder = page.locator('[data-testid="score-reminder"]');
-    assert((await reminder.count()) === 1, '缺少评分提醒');
-    const reminderInfo = await reminder.evaluate((el) => ({
-      buttons: el.querySelectorAll('button, input, textarea, select, a').length,
-      text: (el.textContent || '').trim(),
-    }));
-    assert(reminderInfo.buttons === 0, '评分提醒中出现了交互控件（要求纯文本，不触发 HITL）');
-    assert(
-      /2[\s\S]*10/.test(reminderInfo.text),
-      `评分提醒没有列出 2→10 的档位：${reminderInfo.text.slice(0, 60)}`
-    );
+    // 产物必须是无状态的单文件：不写任何浏览器存储
     const storageUsed = await page.evaluate(async () => {
       const idbNames =
         window.indexedDB && window.indexedDB.databases

@@ -70,9 +70,6 @@ const I18N_DICT = {
     depthPrefix: '因果链深度：',
     hopsUnit: ' 跳',
     audiencePrefix: '读者档位：',
-    scoreIntent: '这张图画到这一层，对你来说深了还是浅了？',
-    scoreOptions: '2 全是新的 · 4 名词眼熟但串不起来 · 6 主线跟得上 · 8 大部分能预判 · 10 能指出哪里不对',
-    scoreHowto: '回一个分数即可，下次的深度据此调整',
     close: '关闭',
     roles: {
       entry: '起点 / 命题',
@@ -138,9 +135,6 @@ const I18N_DICT = {
     depthPrefix: 'Depth: ',
     hopsUnit: ' hops',
     audiencePrefix: 'Audience: ',
-    scoreIntent: 'Is this map too shallow or too deep for you?',
-    scoreOptions: '2 all new · 4 names ring a bell, no structure · 6 main line readable · 8 mostly predictable · 10 can point out what is wrong',
-    scoreHowto: 'Reply with a score; the next map adapts to it',
     close: 'Close',
     roles: {
       entry: 'Entry / Thesis',
