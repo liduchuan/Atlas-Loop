@@ -32,6 +32,8 @@ const I18N_DICT = {
     lock: '锁定位置',
     unlock: '已锁定',
     fitView: '适配全图',
+    fullscreen: '全屏',
+    exitFullscreen: '退出全屏',
     reset: '重置',
     legend: '图例',
     exportPng: '导出 PNG',
@@ -97,6 +99,8 @@ const I18N_DICT = {
     lock: 'Lock',
     unlock: 'Locked',
     fitView: 'Fit View',
+    fullscreen: 'Fullscreen',
+    exitFullscreen: 'Exit Fullscreen',
     reset: 'Reset',
     legend: 'Legend',
     exportPng: 'Export PNG',
@@ -231,7 +235,27 @@ function IconLock({ locked }) {
 }
 
 function IconFit() {
+  // 适配全图：四角箭头向内收拢（区别于全屏的向外扩）
   return (
+    <StrokeIcon>
+      <path d="M4 14h6v6" />
+      <path d="M20 10h-6V4" />
+      <path d="m14 10 7-7" />
+      <path d="m3 21 7-7" />
+    </StrokeIcon>
+  );
+}
+
+function IconFullscreen({ active }) {
+  // 四角向外扩 = 进入全屏；向内收 = 退出全屏
+  return active ? (
+    <StrokeIcon>
+      <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+      <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+      <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+      <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+    </StrokeIcon>
+  ) : (
     <StrokeIcon>
       <path d="M8 3H5a2 2 0 0 0-2 2v3" />
       <path d="M16 3h3a2 2 0 0 1 2 2v3" />
@@ -1242,6 +1266,9 @@ function AtlasCanvasApp({ data }) {
   const [exporting, setExporting] = useState(false);
   const [exportingZip, setExportingZip] = useState(false);
   const canvasRef = useRef(null);
+  // 全屏目标：工具栏 + 画布 + 抽屉的整体容器（不含页头）
+  const bodyRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [showScopeModal, setShowScopeModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedId, setSelectedId] = useState(() => _savedState?.selectedId || null);
@@ -1418,6 +1445,23 @@ function AtlasCanvasApp({ data }) {
   const handleFitViewOnly = useCallback(() => {
     rf.fitView({ padding: 0.18, maxZoom: 1, duration: 0 });
   }, [rf]);
+
+  // ESC 等浏览器原生退出也要同步按钮状态
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  const handleToggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      const p = document.exitFullscreen();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+      return;
+    }
+    const p = bodyRef.current?.requestFullscreen?.();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  }, []);
 
   const handleFullReset = useCallback(() => {
     setActiveStream('all');
@@ -1621,6 +1665,7 @@ function AtlasCanvasApp({ data }) {
           )}
         </div>
       </header>
+      <div className="atlas-body" ref={bodyRef}>
       <div className="atlas-toolbar-row">
         <div className="atlas-streams-bar" data-testid="stream-filter-bar">
           {streams.length > 1 && (
@@ -1769,6 +1814,17 @@ function AtlasCanvasApp({ data }) {
               onClick={handleFitViewOnly}
             >
               <IconFit />
+            </button>
+            <button
+              type="button"
+              data-testid="btn-fullscreen"
+              aria-pressed={isFullscreen}
+              aria-label={isFullscreen ? t.exitFullscreen : t.fullscreen}
+              title={isFullscreen ? t.exitFullscreen : t.fullscreen}
+              className={`atlas-ctrl-btn ${isFullscreen ? 'active' : ''}`}
+              onClick={handleToggleFullscreen}
+            >
+              <IconFullscreen active={isFullscreen} />
             </button>
             <button
               type="button"
@@ -2102,6 +2158,7 @@ function AtlasCanvasApp({ data }) {
           </aside>
         )}
       </main>
+      </div>
 
       <DeepDiveModal
         target={deepDiveTarget}

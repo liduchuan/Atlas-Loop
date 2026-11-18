@@ -540,6 +540,15 @@ input:focus-visible {
   color: var(--text-inverse);
 }
 
+/* 工具栏 + 画布 + 抽屉的整体区域（全屏目标） */
+.atlas-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-canvas);
+}
+
 /* 工作区与画布 */
 .atlas-main-workspace {
   flex: 1;

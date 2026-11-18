@@ -465,3 +465,37 @@ test.describe('抽屉联动关闭与过渡', () => {
   });
 });
 
+// ──────────────────────────────────────────────────────────────
+// 11. 全屏
+// ──────────────────────────────────────────────────────────────
+test.describe('全屏', () => {
+  test('全屏按钮把工具栏+画布+抽屉区域切入全屏，再点退出', async ({ page }) => {
+    await page.goto('/');
+    await waitForCanvas(page);
+
+    await page.locator('[data-testid="btn-fullscreen"]').click();
+    await expect
+      .poll(() => page.evaluate(() => document.fullscreenElement?.classList.contains('atlas-body') ?? false))
+      .toBe(true);
+
+    // 全屏目标包含工具栏、画布与抽屉，不含页头
+    const contains = await page.evaluate(() => {
+      const el = document.fullscreenElement;
+      return {
+        toolbar: Boolean(el?.querySelector('.atlas-toolbar-row')),
+        canvas: Boolean(el?.querySelector('.atlas-canvas-container')),
+        topbar: Boolean(el?.querySelector('.atlas-topbar')),
+      };
+    });
+    expect(contains).toEqual({ toolbar: true, canvas: true, topbar: false });
+
+    // 抽屉在全屏里照常工作
+    await page.locator('.react-flow__node').first().click();
+    await expect(page.locator('[data-testid="inspector-panel"]')).toBeVisible();
+
+    // 再点一次退出全屏
+    await page.locator('[data-testid="btn-fullscreen"]').click();
+    await expect.poll(() => page.evaluate(() => document.fullscreenElement)).toBe(null);
+  });
+});
+
