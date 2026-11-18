@@ -15,7 +15,7 @@ export default defineConfig({
 
   use: {
     baseURL: 'http://localhost:5179',
-    headless: false,          // 题目要求：用真实浏览器跑
+    headless: true,          
     viewport: { width: 1280, height: 800 },
     video: 'retain-on-failure',
     screenshot: 'only-on-failure',

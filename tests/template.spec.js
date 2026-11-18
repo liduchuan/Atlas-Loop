@@ -318,3 +318,150 @@ test.describe('锁定/解锁画布', () => {
     await expect(lockBtn).toBeVisible();
   });
 });
+
+// ──────────────────────────────────────────────────────────────
+// 8. 检视抽屉滚动记忆
+// ──────────────────────────────────────────────────────────────
+test.describe('检视抽屉滚动记忆', () => {
+  test('切换节点时各节点记住自己的滚动位置', async ({ page }) => {
+    // 压低视口高度，确保抽屉内容可滚动
+    await page.setViewportSize({ width: 1280, height: 480 });
+    await page.goto('/');
+    await waitForCanvas(page);
+
+    const nodes = page.locator('.react-flow__node');
+    const inspector = page.locator('[data-testid="inspector-panel"]');
+    const title = inspector.locator('.atlas-inspector-title');
+
+    // 打开节点 A 并滚到底部
+    await nodes.nth(0).click();
+    await expect(inspector).toBeVisible();
+    const titleA = await title.textContent();
+    const scrolledA = await inspector.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+      return el.scrollTop;
+    });
+    expect(scrolledA).toBeGreaterThan(0);
+
+    // 切到节点 B：抽屉回到顶部
+    await nodes.nth(1).click();
+    await expect(title).not.toHaveText(titleA);
+    await expect(inspector).toHaveJSProperty('scrollTop', 0);
+
+    // 切回节点 A：恢复之前的滚动位置
+    await nodes.nth(0).click();
+    await expect(title).toHaveText(titleA);
+    await expect.poll(() => inspector.evaluate((el) => el.scrollTop)).toBe(scrolledA);
+
+    // 滚动记忆写在 localStorage（关标签页也保留），不再用 sessionStorage
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    const storage = await page.evaluate(() => ({
+      local: Object.keys(localStorage).filter((k) => k.startsWith('atlas-state:')),
+      session: Object.keys(sessionStorage).filter((k) => k.startsWith('atlas-state:')),
+    }));
+    expect(storage.local.length).toBe(1);
+    expect(storage.session.length).toBe(0);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────
+// 9. 工具栏状态记忆（nuqs 绑定 URL query）
+// ──────────────────────────────────────────────────────────────
+test.describe('工具栏状态记忆', () => {
+  test('开关写进 URL query，刷新后恢复；Reset 后清空', async ({ page }) => {
+    await page.goto('/');
+    await waitForCanvas(page);
+
+    // 打开小地图与图例，解锁画布：状态出现在地址栏
+    await page.locator('[data-testid="btn-minimap"]').click();
+    await page.locator('[data-testid="btn-legend"]').click();
+    await page.locator('[data-testid="btn-lock"]').click();
+    await expect(page.locator('.react-flow__minimap')).toBeVisible();
+    await expect(page.locator('[data-testid="legend-panel"]')).toBeVisible();
+    await expect(page).toHaveURL(/[?&]minimap=true/);
+    await expect(page).toHaveURL(/[?&]legend=true/);
+    await expect(page).toHaveURL(/[?&]locked=false/);
+
+    // 刷新（URL 不变）后状态恢复
+    await page.reload();
+    await waitForCanvas(page);
+    await expect(page.locator('.react-flow__minimap')).toBeVisible();
+    await expect(page.locator('[data-testid="legend-panel"]')).toBeVisible();
+    await expect(page.locator('[data-testid="btn-lock"]')).toHaveAttribute('data-locked', 'false');
+
+    // Reset 回到默认并清掉 query，再刷新也不会恢复旧状态
+    await page.locator('[data-testid="btn-reset"]').click();
+    await expect(page.locator('.react-flow__minimap')).not.toBeVisible();
+    await expect(page).not.toHaveURL(/[?&]minimap=/);
+    await page.reload();
+    await waitForCanvas(page);
+    await expect(page.locator('.react-flow__minimap')).not.toBeVisible();
+    await expect(page.locator('[data-testid="legend-panel"]')).not.toBeVisible();
+    await expect(page.locator('[data-testid="btn-lock"]')).toHaveAttribute('data-locked', 'true');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────
+// 10. 抽屉联动关闭与滑移过渡
+// ──────────────────────────────────────────────────────────────
+test.describe('抽屉联动关闭与过渡', () => {
+  test('点画布空白处取消选中时抽屉滑出并卸载', async ({ page }) => {
+    await page.goto('/');
+    await waitForCanvas(page);
+
+    const inspector = page.locator('[data-testid="inspector-panel"]');
+    await page.locator('.react-flow__node').first().click();
+    await expect(inspector).toBeVisible();
+    // 挂载后下一帧加上 open class，触发滑入过渡
+    await expect(inspector).toHaveClass(/open/);
+
+    // 点画布空白处：节点取消选中，抽屉联动滑出
+    await page.locator('[data-testid="atlas-canvas-wrap"]').click({ position: { x: 40, y: 40 } });
+    await expect(inspector).not.toHaveClass(/open/);
+    // 过渡结束后从 DOM 卸载
+    await expect(inspector).toHaveCount(0);
+  });
+
+  test('拖拽节点不弹抽屉，普通点击才弹', async ({ page }) => {
+    await page.goto('/');
+    await waitForCanvas(page);
+    // 解锁画布才能拖节点
+    await page.locator('[data-testid="btn-lock"]').click();
+
+    const node = page.locator('.react-flow__node').first();
+    const inspector = page.locator('[data-testid="inspector-panel"]');
+
+    // 拖拽节点：松手后不应弹出抽屉
+    const box = await node.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 140, box.y + box.height / 2 + 80, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    await expect(inspector).toHaveCount(0);
+
+    // 普通点击：弹出抽屉
+    await node.click();
+    await expect(inspector).toBeVisible();
+  });
+
+  test('拖动画布平移不误关抽屉', async ({ page }) => {
+    await page.goto('/');
+    await waitForCanvas(page);
+
+    const inspector = page.locator('[data-testid="inspector-panel"]');
+    await page.locator('.react-flow__node').first().click();
+    await expect(inspector).toBeVisible();
+
+    // 在空白处按下并拖动画布平移：松手后抽屉应保持打开
+    const wrap = page.locator('[data-testid="atlas-canvas-wrap"]');
+    const box = await wrap.boundingBox();
+    await page.mouse.move(box.x + 40, box.y + 40);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 240, box.y + 180, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    await expect(inspector).toBeVisible();
+  });
+});
+

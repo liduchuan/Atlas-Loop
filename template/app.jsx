@@ -12,6 +12,8 @@ import {
     useReactFlow,
 } from '@xyflow/react';
 import { toPng } from 'html-to-image';
+import { parseAsBoolean, parseAsString, useQueryState } from 'nuqs';
+import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -335,14 +337,20 @@ function fallbackCopy(text) {
   return true;
 }
 
-// ── 视口 & 交互状态缓存（从子图返回时恢复位置）────────────────────────
-const _STATE_KEY = 'atlas-state:' + location.href;
+// ── 视口 & 交互状态缓存（localStorage，关标签页后重开也恢复）──────────
+// 工具栏状态由 nuqs 写进 URL query，所以 key 必须剔除 query 才稳定；
+// 保留 dev-server 的 ?data= 参数，避免开发预览的父子图共用同一份缓存
+const _STATE_KEY = (() => {
+  const base = location.href.split(/[?#]/)[0];
+  const dataParam = new URLSearchParams(location.search).get('data');
+  return 'atlas-state:' + base + (dataParam ? `?data=${dataParam}` : '');
+})();
 function _loadSavedState() {
-  try { return JSON.parse(sessionStorage.getItem(_STATE_KEY) || 'null'); }
+  try { return JSON.parse(localStorage.getItem(_STATE_KEY) || 'null'); }
   catch { return null; }
 }
 function _saveState(s) {
-  try { sessionStorage.setItem(_STATE_KEY, JSON.stringify(s)); } catch {}
+  try { localStorage.setItem(_STATE_KEY, JSON.stringify(s)); } catch {}
 }
 // 页面加载时读取一次；pagehide 时写入
 const _savedState = _loadSavedState();
@@ -1209,11 +1217,28 @@ function AtlasCanvasApp({ data }) {
     return set;
   }, [data.nodes]);
 
-  const [activeStream, setActiveStream] = useState(() => _savedState?.activeStream || 'all');
+  // 工具栏状态绑定到 URL query（nuqs）：刷新/分享链接即恢复
+  const [activeStream, setActiveStream] = useQueryState(
+    'stream',
+    parseAsString.withDefault('all'),
+    { history: 'replace' }
+  );
   const [expandedIds, setExpandedIds] = useState(() => new Set(_savedState?.expandedIds || []));
-  const [isLocked, setIsLocked] = useState(true);
-  const [showLegend, setShowLegend] = useState(false);
-  const [showMiniMap, setShowMiniMap] = useState(false);
+  const [isLocked, setIsLocked] = useQueryState(
+    'locked',
+    parseAsBoolean.withDefault(true),
+    { history: 'replace' }
+  );
+  const [showLegend, setShowLegend] = useQueryState(
+    'legend',
+    parseAsBoolean.withDefault(false),
+    { history: 'replace' }
+  );
+  const [showMiniMap, setShowMiniMap] = useQueryState(
+    'minimap',
+    parseAsBoolean.withDefault(false),
+    { history: 'replace' }
+  );
   const [exporting, setExporting] = useState(false);
   const [exportingZip, setExportingZip] = useState(false);
   const canvasRef = useRef(null);
@@ -1222,6 +1247,12 @@ function AtlasCanvasApp({ data }) {
   const [selectedId, setSelectedId] = useState(() => _savedState?.selectedId || null);
   const [deepDiveTarget, setDeepDiveTarget] = useState(null);
   const [resetEpoch, setResetEpoch] = useState(0);
+
+  // 检视抽屉的滚动位置记忆：按节点 id 记录，切回该节点时恢复
+  const inspectorRef = useRef(null);
+  const inspectorScrollRef = useRef(_savedState?.inspectorScroll || {});
+  // 滚动事件归属的节点 id：只在恢复完成后更新，避免切换瞬间的钳制滚动被记到新节点名下
+  const inspectorScrollIdRef = useRef(null);
 
   const rf = useReactFlow();
   // onInit 回调拿到的实例是 ReactFlow 完成挂载后的稳定引用，
@@ -1281,6 +1312,50 @@ function AtlasCanvasApp({ data }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(computed.edges);
 
+  // 节点在画布上被取消选中（点空白处等）时，联动关闭抽屉；
+  // 同一批 change 里有新节点被选中（切节点）时不清空，由 onNodeClick 接力
+  const handleNodesChange = useCallback(
+    (changes) => {
+      const deselected = changes.some(
+        (c) => c.type === 'select' && c.selected === false && c.id === selectedId
+      );
+      const hasNewSelection = changes.some((c) => c.type === 'select' && c.selected === true);
+      if (deselected && !hasNewSelection) setSelectedId(null);
+      onNodesChange(changes);
+    },
+    [onNodesChange, selectedId]
+  );
+
+  // 拖拽兼容：RF 的 click 在拖拽松手后同样会触发，用「按下→松开的位移」区分点按与拖拽。
+  // 位移超阈值视为拖拽，不当点击处理（不开/不关抽屉）；键盘激活没有按下坐标，照常生效
+  const pressPosRef = useRef(null);
+  const recordPressPos = useCallback((e) => {
+    pressPosRef.current = { x: e.clientX, y: e.clientY, t: Date.now() };
+  }, []);
+  const wasDragGesture = useCallback((e) => {
+    const d = pressPosRef.current;
+    pressPosRef.current = null;
+    // 按下坐标超时作废：拖拽在画布外松手时 click 不触发，残留坐标不该误吞下一次点击
+    if (!d || Date.now() - d.t > 600) return false;
+    return Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4;
+  }, []);
+
+  const handleNodeClick = useCallback(
+    (e, node) => {
+      if (wasDragGesture(e)) return;
+      setSelectedId(node.id);
+    },
+    [wasDragGesture]
+  );
+
+  const handlePaneClick = useCallback(
+    (e) => {
+      if (wasDragGesture(e)) return;
+      setSelectedId(null);
+    },
+    [wasDragGesture]
+  );
+
   // 初始状态已经是 computed：挂载时不再重复写入。重复写入会用未测量的节点对象覆盖
   // React Flow 刚量好的尺寸与连接点，偶发地让所有连线不再渲染。
   const appliedComputedRef = useRef(computed);
@@ -1324,15 +1399,15 @@ function AtlasCanvasApp({ data }) {
       _saveState({
         selectedId,
         expandedIds: [...expandedIds],
-        activeStream,
         viewport: rfInitRef.current?.getViewport() ?? null,
         layout: layoutFingerprint,
         positions: movedPositionsRef.current,
+        inspectorScroll: inspectorScrollRef.current,
       });
     };
     window.addEventListener('pagehide', save);
     return () => window.removeEventListener('pagehide', save);
-  }, [selectedId, expandedIds, activeStream, layoutFingerprint]);
+  }, [selectedId, expandedIds, layoutFingerprint]);
 
   // 拖动结束时记录节点位置，下次打开（或重新布局）时恢复
   const handleNodeDragStop = useCallback((_, node) => {
@@ -1352,10 +1427,13 @@ function AtlasCanvasApp({ data }) {
     setDeepDiveTarget(null);
     setShowScopeModal(false);
     setIsLocked(true);
+    setShowLegend(false);
+    setShowMiniMap(false);
     setResetEpoch((c) => c + 1);
     movedPositionsRef.current = null;
+    inspectorScrollRef.current = {};
     // 清除缓存，确保下次访问不会误恢复旧状态
-    try { sessionStorage.removeItem(_STATE_KEY); } catch {}
+    try { localStorage.removeItem(_STATE_KEY); } catch {}
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         rf.fitView({ padding: 0.18, maxZoom: 1, duration: 0 });
@@ -1434,6 +1512,36 @@ function AtlasCanvasApp({ data }) {
     }
     return (data.nodes || []).find((n) => n.id === selectedId) || null;
   }, [selectedId, data.nodes]);
+
+  // 抽屉显隐过渡：进入时先挂载再下一帧滑入；退出时等动画播完再卸载
+  const [drawerItem, setDrawerItem] = useState(selectedItem);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  useEffect(() => {
+    if (selectedItem) {
+      setDrawerItem(selectedItem);
+      const raf = requestAnimationFrame(() => requestAnimationFrame(() => setDrawerOpen(true)));
+      return () => cancelAnimationFrame(raf);
+    }
+    setDrawerOpen(false);
+    const timer = setTimeout(() => setDrawerItem(null), 240);
+    return () => clearTimeout(timer);
+  }, [selectedItem]);
+
+  // 切换节点后恢复该节点抽屉的滚动位置；未看过的节点回到顶部。
+  // 只有渲染内容真的切到当前节点（drawerItem === selectedItem）才恢复并认领滚动事件，
+  // 过渡期间的旧内容既不恢复也不记录，避免钳制滚动串到别的节点名下
+  useEffect(() => {
+    inspectorScrollIdRef.current = null;
+    const el = inspectorRef.current;
+    if (!el || !selectedId || drawerItem !== selectedItem) return;
+    inspectorScrollIdRef.current = selectedId;
+    el.scrollTop = inspectorScrollRef.current[selectedId] || 0;
+  }, [selectedId, selectedItem, drawerItem]);
+
+  const handleInspectorScroll = useCallback((e) => {
+    const id = inspectorScrollIdRef.current;
+    if (id) inspectorScrollRef.current[id] = e.currentTarget.scrollTop;
+  }, []);
 
   const currentStreamObj = useMemo(() => {
     if (activeStream === 'all') return streams[0] || null;
@@ -1764,14 +1872,20 @@ function AtlasCanvasApp({ data }) {
       )}
 
       <main id="atlas-main" className="atlas-main-workspace">
-        <div className="atlas-canvas-container" data-testid="atlas-canvas-wrap" ref={canvasRef}>
+        <div
+          className="atlas-canvas-container"
+          data-testid="atlas-canvas-wrap"
+          ref={canvasRef}
+          onPointerDownCapture={recordPressPos}
+        >
           <ReactFlow
             nodes={nodes}
             edges={edges}
             nodeTypes={NODE_TYPES}
-            onNodesChange={onNodesChange}
+            onNodesChange={handleNodesChange}
             onEdgesChange={onEdgesChange}
-            onNodeClick={(_, node) => setSelectedId(node.id)}
+            onNodeClick={handleNodeClick}
+            onPaneClick={handlePaneClick}
             onNodeDragStop={handleNodeDragStop}
             nodesDraggable={!isLocked}
             nodesConnectable={false}
@@ -1817,14 +1931,19 @@ function AtlasCanvasApp({ data }) {
           )}
         </div>
 
-        {selectedItem && (
-          <aside className="atlas-inspector" data-testid="inspector-panel">
+        {drawerItem && (
+          <aside
+            className={`atlas-inspector ${drawerOpen ? 'open' : ''}`}
+            data-testid="inspector-panel"
+            ref={inspectorRef}
+            onScroll={handleInspectorScroll}
+          >
             <div className="atlas-inspector-head">
               <div className="atlas-inspector-head-text">
-                {selectedItem._parentTitle && (
-                  <div className="atlas-inspector-parent">{selectedItem._parentTitle}</div>
+                {drawerItem._parentTitle && (
+                  <div className="atlas-inspector-parent">{drawerItem._parentTitle}</div>
                 )}
-                <h2 className="atlas-inspector-title">{selectedItem.title}</h2>
+                <h2 className="atlas-inspector-title">{drawerItem.title}</h2>
               </div>
               <button
                 type="button"
@@ -1842,67 +1961,67 @@ function AtlasCanvasApp({ data }) {
                 <span
                   className="atlas-role-dot"
                   style={{
-                    backgroundColor: selectedItem.confidence === 'unverified' ? '#b45309' : '#15803d',
+                    backgroundColor: drawerItem.confidence === 'unverified' ? '#b45309' : '#15803d',
                   }}
                   aria-hidden="true"
                 />
-                <span>{selectedItem.confidence === 'unverified' ? t.unverifiedTag : t.verifiedTag}</span>
+                <span>{drawerItem.confidence === 'unverified' ? t.unverifiedTag : t.verifiedTag}</span>
               </span>
-              {selectedItem.unverifiedReason && (
-                <p className="atlas-unverified-note">{selectedItem.unverifiedReason}</p>
+              {drawerItem.unverifiedReason && (
+                <p className="atlas-unverified-note">{drawerItem.unverifiedReason}</p>
               )}
             </div>
 
-            {selectedItem.summary && (
+            {drawerItem.summary && (
               <section className="atlas-sec">
                 <h4>{t.whatItDoes}</h4>
-                <p>{selectedItem.summary}</p>
+                <p>{drawerItem.summary}</p>
               </section>
             )}
 
-            {selectedItem.whyItMatters && (
+            {drawerItem.whyItMatters && (
               <section className="atlas-sec">
                 <h4>{t.whyItMatters}</h4>
-                <p>{selectedItem.whyItMatters}</p>
+                <p>{drawerItem.whyItMatters}</p>
               </section>
             )}
 
-            {(selectedItem.keyFactors?.inputs || selectedItem.keyFactors?.outputs) && (
+            {(drawerItem.keyFactors?.inputs || drawerItem.keyFactors?.outputs) && (
               <section className="atlas-sec">
-                {selectedItem.keyFactors.inputs && (
+                {drawerItem.keyFactors.inputs && (
                   <div className="atlas-kv">
                     <strong>{t.inputsLabel}：</strong>
-                    <span>{selectedItem.keyFactors.inputs}</span>
+                    <span>{drawerItem.keyFactors.inputs}</span>
                   </div>
                 )}
-                {selectedItem.keyFactors.outputs && (
+                {drawerItem.keyFactors.outputs && (
                   <div className="atlas-kv">
                     <strong>{t.outputsLabel}：</strong>
-                    <span>{selectedItem.keyFactors.outputs}</span>
+                    <span>{drawerItem.keyFactors.outputs}</span>
                   </div>
                 )}
               </section>
             )}
 
-            {selectedItem.mechanismsAndEffects && (
+            {drawerItem.mechanismsAndEffects && (
               <section className="atlas-sec">
                 <h4>{t.mechanismsLabel}</h4>
-                <p>{selectedItem.mechanismsAndEffects}</p>
+                <p>{drawerItem.mechanismsAndEffects}</p>
               </section>
             )}
 
-            {selectedItem.watchouts && (
+            {drawerItem.watchouts && (
               <section className="atlas-sec atlas-watchout-box">
                 <h4>{t.watchoutsLabel}</h4>
-                <p>{selectedItem.watchouts}</p>
+                <p>{drawerItem.watchouts}</p>
               </section>
             )}
 
-            {Array.isArray(selectedItem.anchors) && selectedItem.anchors.length > 0 && (
+            {Array.isArray(drawerItem.anchors) && drawerItem.anchors.length > 0 && (
               <section className="atlas-sec">
                 <h4>{t.anchorsLabel}</h4>
                 <div className="atlas-anchor-list">
-                  {selectedItem.anchors.map((anc, i) => (
+                  {drawerItem.anchors.map((anc, i) => (
                     <div key={i} className="atlas-anchor-card" data-testid="anchor-item">
                       <div className="atlas-anchor-label">{anc.label}</div>
 
@@ -1963,7 +2082,7 @@ function AtlasCanvasApp({ data }) {
               </section>
             )}
 
-            {selectedItem.deepDive && (
+            {drawerItem.deepDive && (
               <section className="atlas-sec">
                 <button
                   type="button"
@@ -1971,8 +2090,8 @@ function AtlasCanvasApp({ data }) {
                   className="atlas-open-dive-btn"
                   onClick={() =>
                     setDeepDiveTarget({
-                      title: selectedItem.title,
-                      deepDive: selectedItem.deepDive,
+                      title: drawerItem.title,
+                      deepDive: drawerItem.deepDive,
                     })
                   }
                 >
@@ -2007,9 +2126,11 @@ function mountAtlas() {
   const rootEl = document.getElementById('root');
   const root = createRoot(rootEl);
   root.render(
-    <ReactFlowProvider>
-      <AtlasCanvasApp data={data} />
-    </ReactFlowProvider>
+    <NuqsAdapter>
+      <ReactFlowProvider>
+        <AtlasCanvasApp data={data} />
+      </ReactFlowProvider>
+    </NuqsAdapter>
   );
 }
 
