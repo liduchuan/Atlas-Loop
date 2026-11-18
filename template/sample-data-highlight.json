@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "2.0",
+  "meta": {
+    "title": "片段高亮",
+    "subtitle": "代码按语言按需着色，公式保持纯文本",
+    "subjectTag": "查看器",
+    "language": "zh-CN",
+    "generatedByModel": "Atlas Loop Preview",
+    "level": 0,
+    "depth": 2,
+    "depthReason": "从公式到代码只有两步：先确认不是代码，再按语言着色",
+    "audience": "在看查看器片段样式的人",
+    "drillDownTarget": null,
+    "parentMapHtml": null,
+    "uncoveredScopes": [],
+    "unverifiedNotes": []
+  },
+  "streams": [
+    {
+      "id": "stream-snippet",
+      "title": "片段",
+      "summary": "公式、显式语言和自动判断",
+      "learningOrder": ["n-formula", "n-code", "n-shell"]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n-formula",
+      "streamIds": ["stream-snippet"],
+      "role": "entry",
+      "title": "公式保持纯文本",
+      "summary": "没有语言标记、也不像代码的片段不加载高亮器",
+      "confidence": "verified",
+      "anchors": [
+        {
+          "kind": "snippet",
+          "label": "达西公式",
+          "content": "Q = (k · A · ΔP) / (μ · L)   // 渗透率 k 对粒径平方高度敏感"
+        }
+      ]
+    },
+    {
+      "id": "n-code",
+      "streamIds": ["stream-snippet"],
+      "role": "core",
+      "title": "按语言着色",
+      "summary": "显式别名和自动判断都会等到打开片段后再加载语法",
+      "confidence": "verified",
+      "anchors": [
+        {
+          "kind": "snippet",
+          "label": "萃取比",
+          "language": "python",
+          "content": "def cups(yield_g):\n    return yield_g / 18\n"
+        },
+        {
+          "kind": "snippet",
+          "label": "注水计时",
+          "language": "ts",
+          "content": "export function ratio(dose: number): number {\n  return dose * 2;\n}\n"
+        },
+        {
+          "kind": "snippet",
+          "label": "压力读数",
+          "content": "fn main() {\n    let mut pressure = 9;\n    println!(\"{}\", pressure);\n}\n"
+        }
+      ],
+      "deepDive": {
+        "hoverHint": "语言包不在首屏脚本里",
+        "askPrompts": [
+          {
+            "title": "为什么公式片段不能走自动高亮",
+            "prompt": "达西公式里有等号和注释符。请说明查看器如何避免把它判成代码，同时仍然能在打开真正的代码片段时再加载对应语法。"
+          }
+        ],
+        "subAtlasPrompt": "使用 Atlas Loop 递归生成 L1 专题子地图，目标：「片段高亮的按需加载」，父级地图 snippet-highlight-atlas.html"
+      }
+    },
+    {
+      "id": "n-shell",
+      "streamIds": ["stream-snippet"],
+      "role": "outcome",
+      "title": "命令也是一种片段",
+      "summary": "标明 bash 后才按 shell 语法着色",
+      "confidence": "verified",
+      "anchors": [
+        {
+          "kind": "snippet",
+          "label": "安装",
+          "language": "bash",
+          "content": "npm install highlight.js\n"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "n-formula",
+      "target": "n-code",
+      "label": "确认是代码"
+    },
+    {
+      "id": "e2",
+      "source": "n-code",
+      "target": "n-shell",
+      "label": "标明语言"
+    }
+  ]
+}

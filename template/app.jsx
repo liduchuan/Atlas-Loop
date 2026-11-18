@@ -16,6 +16,7 @@ import { parseAsBoolean, parseAsString, useQueryState } from 'nuqs';
 import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { highlightSnippet, resolveSnippetPlan } from './snippet-highlight.js';
 
 const I18N_DICT = {
   zh: {
@@ -900,6 +901,49 @@ function AtlasNode({ id, data, selected }) {
 }
 
 const NODE_TYPES = { atlasNode: AtlasNode };
+
+function AnchorSnippet({ content, language, snippetLabel, copyLabel, copiedLabel, testId }) {
+  const plan = useMemo(() => resolveSnippetPlan(content, language), [content, language]);
+  const [highlighted, setHighlighted] = useState(null);
+
+  useEffect(() => {
+    if (plan.mode === 'plain') {
+      setHighlighted(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setHighlighted(null);
+    highlightSnippet(plan).then((result) => {
+      if (!cancelled) setHighlighted(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [plan]);
+
+  return (
+    <div className="atlas-anchor-snippet" data-testid="anchor-snippet" data-snippet-label={snippetLabel || ''}>
+      <pre
+        translate="no"
+        data-highlighted={highlighted ? 'true' : 'false'}
+        data-hljs-lang={highlighted?.language || undefined}
+      >
+        {highlighted ? (
+          <code className="hljs" dangerouslySetInnerHTML={{ __html: highlighted.html }} />
+        ) : (
+          plan.display
+        )}
+      </pre>
+      <CopyButton
+        text={content || ''}
+        label={copyLabel}
+        copiedLabel={copiedLabel}
+        testId={testId}
+        small
+      />
+    </div>
+  );
+}
 
 function CopyButton({ text, label, copiedLabel, testId = 'btn-copy-prompt', small = false }) {
   const [copied, setCopied] = useState(false);
@@ -2105,16 +2149,14 @@ function AtlasCanvasApp({ data }) {
                       )}
 
                       {anc.kind === 'snippet' && (
-                        <div className="atlas-anchor-snippet">
-                          <pre translate="no">{anc.content}</pre>
-                          <CopyButton
-                            text={anc.content || ''}
-                            label={t.copySnippet}
-                            copiedLabel={t.copiedBtn}
-                            testId={`btn-copy-snippet-${i}`}
-                            small
-                          />
-                        </div>
+                        <AnchorSnippet
+                          content={anc.content}
+                          language={anc.language}
+                          snippetLabel={anc.label}
+                          copyLabel={t.copySnippet}
+                          copiedLabel={t.copiedBtn}
+                          testId={`btn-copy-snippet-${i}`}
+                        />
                       )}
 
                       {anc.kind === 'link' && (

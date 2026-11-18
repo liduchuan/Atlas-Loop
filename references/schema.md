@@ -129,8 +129,9 @@
    - `extension`：异步影响、进阶变体、下游后果或推论。
    - `outcome`：最终结果、要点或目标状态。
 4. **多态 `anchors`（可选——选用适合主题的类型）**：
-   - 公式 / CLI 命令 / 思维清单 / 引文（`snippet`）：
-     `{ "kind": "snippet", "label": "关键公式 / 命令", "content": "…" }`
+   - 公式 / CLI 命令 / 思维清单 / 引文 / 代码（`snippet`）：
+     `{ "kind": "snippet", "label": "关键公式 / 命令", "content": "…", "language": "python" }`
+     `language` 可选，填 highlight.js 的语言 id 或别名（如 `js`、`ts`、`tsx`、`py`、`bash`、`sql`）。查看器按该语言按需加载语法高亮，不进入首屏脚本。省略时，只有内容看起来像代码才会自动判断；公式、清单和普通句子保持纯文本。`text` / `plain` 强制不高亮。
    - 网页 / 文档参考（`link`）：
      `{ "kind": "link", "label": "官方指南", "url": "https://…" }`
    - 书籍章节 / 论文 / 事实引用（`source`）：

@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PLAIN_LANGUAGES, normalizeLanguageHint, resolveSnippetPlan, walkSnippetAnchors } from '../template/snippet-lang.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SKILL_ROOT = path.resolve(__dirname, '..');
@@ -100,6 +101,53 @@ function encodeEditorUri(absPath, line = 1, editor = 'vscode') {
   return `${scheme}://file${pathPart}:${Math.max(1, Number(line) || 1)}:1`;
 }
 
+function escapeScript(source) {
+  return String(source || '').replace(/<\/script/gi, '<\\/script');
+}
+
+function hljsPayloadFor(data) {
+  const dir = path.join(SKILL_ROOT, 'assets', 'hljs');
+  const manifestPath = path.join(dir, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) return '';
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const needed = new Set();
+  let auto = false;
+  walkSnippetAnchors(data, (anchor) => {
+    const plan = resolveSnippetPlan(anchor.content, anchor.language);
+    if (plan.mode === 'auto') auto = true;
+    if (plan.mode === 'language') {
+      const canonical = manifest.aliases?.[normalizeLanguageHint(plan.language)];
+      if (canonical) needed.add(canonical);
+    }
+  });
+  if (auto) {
+    for (const name of manifest.common || []) needed.add(name);
+  }
+  const queue = [...needed];
+  for (const name of queue) {
+    for (const dep of manifest.deps?.[name] || []) {
+      if (!needed.has(dep)) {
+        needed.add(dep);
+        queue.push(dep);
+      }
+    }
+  }
+  if (needed.size === 0) return '';
+
+  const parts = [
+    `<script type="text/plain" id="atlas-hljs-manifest">${JSON.stringify(manifest).replace(/</g, '\\u003c')}</script>`,
+    `<script type="text/plain" id="atlas-hljs-core">${escapeScript(fs.readFileSync(path.join(dir, 'core.js'), 'utf8'))}</script>`,
+  ];
+  for (const name of [...needed].sort()) {
+    const file = path.join(dir, 'lang', `${name}.js`);
+    if (!fs.existsSync(file)) continue;
+    parts.push(
+      `<script type="text/plain" id="atlas-hljs-lang-${name}">${escapeScript(fs.readFileSync(file, 'utf8'))}</script>`
+    );
+  }
+  return parts.join('\n');
+}
+
 function escapeHtml(s) {
   return String(s || '')
     .replace(/&/g, '&amp;')
@@ -140,6 +188,15 @@ function validateAndEnrich(data) {
 
   const nodeIds = new Set();
   let deepDiveNodeCount = 0;
+  let manifestAliases = null;
+  try {
+    const manifestPath = path.join(SKILL_ROOT, 'assets', 'hljs', 'manifest.json');
+    if (fs.existsSync(manifestPath)) {
+      manifestAliases = JSON.parse(fs.readFileSync(manifestPath, 'utf8')).aliases || null;
+    }
+  } catch {
+    manifestAliases = null;
+  }
 
   const verifyAnchors = (anchors, ownerLabel) => {
     if (!Array.isArray(anchors)) return;
@@ -148,6 +205,14 @@ function validateAndEnrich(data) {
       if (!['editor', 'snippet', 'link', 'source'].includes(anc.kind)) {
         errors.push(`${ownerLabel}：无效的 anchor.kind "${anc.kind}"`);
         continue;
+      }
+      if (anc.kind === 'snippet' && anc.language != null && anc.language !== '') {
+        const hint = normalizeLanguageHint(anc.language);
+        if (typeof anc.language !== 'string' || !/^[\w#+.-]{1,64}$/.test(hint)) {
+          errors.push(`${ownerLabel}：snippet.language 必须是语言 id 或别名`);
+        } else if (manifestAliases && !PLAIN_LANGUAGES.has(hint) && hint !== 'auto' && !manifestAliases[hint]) {
+          warnings.push(`${ownerLabel}：snippet.language "${anc.language}" 没有对应语法，片段会保持纯文本`);
+        }
       }
       if (anc.kind === 'editor') {
         if (!anc.absPath || !path.isAbsolute(anc.absPath)) {
@@ -324,7 +389,8 @@ function main() {
   const finalHtml = shellHtml
     .replace('__ATLAS_HTML_LANG__', escapeHtml(meta.language || 'en'))
     .replace('__ATLAS_HTML_TITLE__', escapeHtml(`${meta.title} — Atlas Loop`))
-    .replace('__ATLAS_DATA_JSON__', () => safeJsonPayload);
+    .replace('__ATLAS_DATA_JSON__', () => safeJsonPayload)
+    .replace('<!--__ATLAS_HLJS_PAYLOAD__-->', () => hljsPayloadFor(validated));
 
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, finalHtml, 'utf8');

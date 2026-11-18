@@ -70,7 +70,7 @@ node <skill_dir>/scripts/profile.mjs read --domain "餐饮/厨师/粤菜" --mode
 1. **每个论断都要有依据**:
    - 先检视一手证据（本地文件存在时查看实际文件；否则查阅权威文档、文本或领域原理）。
    - 对证据充分的节点标记 `"confidence": "verified"`。凡某关系、运行时绑定、版本差异或跨章节推断无法从现有证据 100% 确认时，设置 `"confidence": "unverified"`，填写 `unverifiedReason`，并在 `meta.unverifiedNotes` 中汇总。绝不编造路径、行号、引用或 URL。
-   - 仅在适合主题时附加多态 `anchors`：`snippet`（公式、命令、清单）、`source`（引用、章节）、`link`（参考 URL），或 `editor`（已验证的本地 `absPath` + `line`，仅用于 `vscode` 或 `zed`，绝不使用裸 `file://`）。
+   - 仅在适合主题时附加多态 `anchors`：`snippet`（公式、命令、清单、代码）、`source`（引用、章节）、`link`（参考 URL），或 `editor`（已验证的本地 `absPath` + `line`，仅用于 `vscode` 或 `zed`，绝不使用裸 `file://`）。代码片段要写 `language`（如 `python`、`ts`、`bash`）；查看器会按这个语言按需加载高亮，公式和清单不要填 `language`。
 2. **按深度设计清晰度**:
    - 通过将流程归入带有有序 `learningOrder` 的 `streams`，保持概览可读；浅图（`depth <= 2`）只需一条脉络，画布会自动收起搜索与小地图。
    - 深图里，把更细的内部步骤、子论证或调用链放入复杂节点的 `detailGraph`（`nodes` + `edges`），让学习者能展开内部、再折叠返回。`detailGraph` 是「同样的深度往下再展开一层」，不是把跳数硬塞进去；内部没有真实步骤的节点不要加。

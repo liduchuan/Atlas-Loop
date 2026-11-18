@@ -499,3 +499,103 @@ test.describe('全屏', () => {
   });
 });
 
+// ──────────────────────────────────────────────────────────────
+// 12. 片段代码高亮（按需加载）
+// ──────────────────────────────────────────────────────────────
+test.describe('片段代码高亮', () => {
+  test('首屏不请求语法包；打开代码片段后才高亮，公式保持纯文本', async ({ page }) => {
+    const hljsUrls = [];
+    page.on('request', (req) => {
+      if (req.url().includes('/__hljs/')) hljsUrls.push(req.url());
+    });
+
+    const bundle = await page.request.get('/__bundle.js');
+    const bundleText = await bundle.text();
+    expect(bundleText).not.toContain('beginKeywords');
+    expect(bundleText).not.toContain('highlight.js/lib/languages');
+
+    await page.goto('/?data=sample-data-highlight.json');
+    await waitForCanvas(page);
+    expect(hljsUrls).toEqual([]);
+
+    await page.locator('[data-node-id="n-formula"]').click();
+    const formula = page.locator('[data-snippet-label="达西公式"] pre');
+    await expect(formula).toBeVisible();
+    await expect(formula).toHaveAttribute('data-highlighted', 'false');
+    await expect(formula).toContainText('ΔP');
+    await expect(formula.locator('.hljs-keyword')).toHaveCount(0);
+    expect(hljsUrls).toEqual([]);
+
+    await page.locator('[data-node-id="n-code"]').click();
+    const python = page.locator('[data-snippet-label="萃取比"] pre');
+    const typescript = page.locator('[data-snippet-label="注水计时"] pre');
+    const rust = page.locator('[data-snippet-label="压力读数"] pre');
+    await expect(python).toHaveAttribute('data-highlighted', 'true');
+    await expect(typescript).toHaveAttribute('data-highlighted', 'true');
+    await expect(rust).toHaveAttribute('data-highlighted', 'true');
+    await expect(python.locator('.hljs-keyword').first()).toBeVisible();
+    await expect(typescript.locator('.hljs-keyword').first()).toBeVisible();
+    await expect(rust.locator('.hljs-keyword').first()).toBeVisible();
+    await expect(typescript).toHaveAttribute('data-hljs-lang', 'typescript');
+    await expect(rust).toHaveAttribute('data-hljs-lang', 'rust');
+    expect(hljsUrls.some((url) => url.includes('/__hljs/core.js'))).toBe(true);
+    expect(hljsUrls.some((url) => url.includes('/__hljs/lang/python.js'))).toBe(true);
+    expect(hljsUrls.some((url) => url.includes('/__hljs/lang/rust.js'))).toBe(true);
+    expect(hljsUrls.some((url) => url.includes('/__hljs/lang/1c.js'))).toBe(false);
+
+    await page.locator('[data-node-id="n-shell"]').click();
+    const shell = page.locator('[data-snippet-label="安装"] pre');
+    await expect(shell).toHaveAttribute('data-highlighted', 'true');
+    await expect(shell).toHaveAttribute('data-hljs-lang', 'bash');
+    await expect(page.locator('[data-snippet-label="安装"] [data-testid="btn-copy-snippet-0"]')).toBeVisible();
+  });
+
+  test('单文件地图只内联用到的语言，启动脚本不含语法包', async ({ page }) => {
+    const { execFileSync } = await import('node:child_process');
+    const { readFileSync } = await import('node:fs');
+    const http = await import('node:http');
+    execFileSync('node', [
+      'scripts/build_atlas.mjs',
+      '--data',
+      'template/sample-data-highlight.json',
+      '--out',
+      '/tmp/atlas-hl-test.html',
+    ], { cwd: process.cwd() });
+    const html = readFileSync('/tmp/atlas-hl-test.html', 'utf8');
+    const startup = html.match(/<script>([\s\S]*?)<\/script>/);
+    expect(startup).not.toBeNull();
+    expect(startup[1]).not.toContain('beginKeywords');
+    expect(html).toContain('type="text/plain" id="atlas-hljs-lang-python"');
+    expect(html).toContain('type="text/plain" id="atlas-hljs-lang-typescript"');
+    expect(html).toContain('type="text/plain" id="atlas-hljs-lang-rust"');
+    expect(html).toContain('type="text/plain" id="atlas-hljs-lang-bash"');
+    expect(html).not.toContain('id="atlas-hljs-lang-1c"');
+    expect(html).not.toContain('id="atlas-hljs-lang-mathematica"');
+
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(html);
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address();
+    const requests = [];
+    page.on('request', (req) => requests.push(new URL(req.url()).pathname));
+    try {
+      await page.goto(`http://127.0.0.1:${port}/`);
+      await waitForCanvas(page);
+      const grammars = await page.evaluate(() => ({
+        type: document.getElementById('atlas-hljs-lang-python')?.getAttribute('type'),
+        highlighted: document.querySelector('.hljs-keyword') !== null,
+      }));
+      expect(grammars).toEqual({ type: 'text/plain', highlighted: false });
+
+      await page.locator('[data-node-id="n-code"]').click();
+      await expect(page.locator('[data-snippet-label="萃取比"] pre')).toHaveAttribute('data-highlighted', 'true');
+      await expect(page.locator('[data-snippet-label="注水计时"] .hljs-keyword').first()).toBeVisible();
+      expect(requests.filter((pathname) => pathname.startsWith('/__hljs/'))).toEqual([]);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+

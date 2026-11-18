@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { buildHljsAssets } from './hljs-build.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -46,6 +47,7 @@ async function compileBundle() {
 
 async function main() {
   ensureDevDeps();
+  await buildHljsAssets();
   const rfCss = fs.readFileSync(
     path.join(REPO_ROOT, 'node_modules', '@xyflow', 'react', 'dist', 'style.css'),
     'utf8'
@@ -69,6 +71,7 @@ async function main() {
   <div id="root"></div>
   <script id="atlas-data-json" type="application/json">__ATLAS_DATA_JSON__</script>
   <script>${safeBundle}</script>
+  <!--__ATLAS_HLJS_PAYLOAD__-->
 </body>
 </html>
 `;

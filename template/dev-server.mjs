@@ -4,6 +4,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { buildHljsAssets } from './hljs-build.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -63,6 +64,7 @@ async function start() {
   const appPath = path.join(__dirname, 'app.jsx');
 
   let cachedBundle = await bundleAppJs();
+  const hljs = await buildHljsAssets();
   const clients = new Set();
 
   const broadcast = (type) => {
@@ -72,7 +74,13 @@ async function start() {
   };
 
   let debounceTimer = null;
-  const watchTargets = [stylesPath, appPath, args.data].filter((p) => fs.existsSync(p));
+  const watchTargets = [
+    stylesPath,
+    appPath,
+    path.join(__dirname, 'snippet-highlight.js'),
+    path.join(__dirname, 'snippet-lang.js'),
+    args.data,
+  ].filter((p) => fs.existsSync(p));
   for (const file of watchTargets) {
     fs.watch(file, () => {
       if (debounceTimer) clearTimeout(debounceTimer);
@@ -123,6 +131,31 @@ async function start() {
     if (url.pathname === '/__bundle.js') {
       res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(cachedBundle);
+      return;
+    }
+
+    if (url.pathname === '/__hljs/manifest.json') {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(hljs.manifest));
+      return;
+    }
+
+    if (url.pathname === '/__hljs/core.js') {
+      res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(hljs.core);
+      return;
+    }
+
+    const langMatch = url.pathname.match(/^\/__hljs\/lang\/([a-z0-9_+-]+)\.js$/i);
+    if (langMatch) {
+      const source = hljs.langs[langMatch[1]];
+      if (!source) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('未知语言');
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(source);
       return;
     }
 

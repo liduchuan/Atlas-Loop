@@ -1052,10 +1052,92 @@ input:focus-visible {
   color: var(--text-primary);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   font-size: 11.5px;
+  line-height: 1.55;
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.atlas-anchor-snippet pre code {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: inherit;
+  word-break: inherit;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.atlas-anchor-snippet .hljs-comment,
+.atlas-anchor-snippet .hljs-quote,
+.atlas-anchor-snippet .hljs-doctag {
+  color: #71717a;
+  font-style: italic;
+}
+
+.atlas-anchor-snippet .hljs-keyword,
+.atlas-anchor-snippet .hljs-selector-tag,
+.atlas-anchor-snippet .hljs-meta .hljs-keyword {
+  color: #6d28d9;
+}
+
+.atlas-anchor-snippet .hljs-string,
+.atlas-anchor-snippet .hljs-regexp {
+  color: #0369a1;
+}
+
+.atlas-anchor-snippet .hljs-number,
+.atlas-anchor-snippet .hljs-literal,
+.atlas-anchor-snippet .hljs-built_in {
+  color: #b45309;
+}
+
+.atlas-anchor-snippet .hljs-title,
+.atlas-anchor-snippet .hljs-title.function_,
+.atlas-anchor-snippet .hljs-section {
+  color: #0f766e;
+}
+
+.atlas-anchor-snippet .hljs-type,
+.atlas-anchor-snippet .hljs-class .hljs-title,
+.atlas-anchor-snippet .hljs-title.class_ {
+  color: #9a3412;
+}
+
+.atlas-anchor-snippet .hljs-variable,
+.atlas-anchor-snippet .hljs-template-variable,
+.atlas-anchor-snippet .hljs-params,
+.atlas-anchor-snippet .hljs-property,
+.atlas-anchor-snippet .hljs-attr {
+  color: #1d4ed8;
+}
+
+.atlas-anchor-snippet .hljs-meta,
+.atlas-anchor-snippet .hljs-symbol,
+.atlas-anchor-snippet .hljs-bullet {
+  color: #a16207;
+}
+
+.atlas-anchor-snippet .hljs-name,
+.atlas-anchor-snippet .hljs-tag {
+  color: #9f1239;
+}
+
+.atlas-anchor-snippet .hljs-attribute {
+  color: #7c3aed;
+}
+
+.atlas-anchor-snippet .hljs-addition {
+  color: #15803d;
+  background: #f0fdf4;
+}
+
+.atlas-anchor-snippet .hljs-deletion {
+  color: #b91c1c;
+  background: #fef2f2;
 }
 
 .atlas-ext-link {
