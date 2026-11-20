@@ -838,7 +838,7 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
         t,
         ...handlers,
       },
-      style: { width, minHeight: height },
+      style: { width },
     });
 
     if (isExpanded) {
@@ -874,7 +874,7 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
             t,
             ...handlers,
           },
-          style: { width: sw, minHeight: sh },
+          style: { width: sw },
         });
 
         if ((incomingCount.get(sn.id) || 0) === 0) {
@@ -929,8 +929,8 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
 
   const positionedNodes = flowNodes.map((fn) => {
     const pos = g.node(fn.id);
-    const w = fn.style.width || 296;
-    const h = fn.style.minHeight || 144;
+    const w = pos?.width || fn.style.width || 296;
+    const h = pos?.height || 144;
     return {
       ...fn,
       targetPosition: Position.Left,

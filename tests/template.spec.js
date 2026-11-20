@@ -348,7 +348,7 @@ test.describe('检视抽屉滚动记忆', () => {
     const title = inspector.locator('.atlas-inspector-title');
 
     // 打开节点 A 并滚到底部
-    await nodes.nth(0).click();
+    await nodes.nth(0).locator('.atlas-node-body').click();
     await expect(inspector).toBeVisible();
     const titleA = await title.textContent();
     const scrolledA = await inspector.evaluate((el) => {
@@ -358,12 +358,12 @@ test.describe('检视抽屉滚动记忆', () => {
     expect(scrolledA).toBeGreaterThan(0);
 
     // 切到节点 B：抽屉回到顶部
-    await nodes.nth(1).click();
+    await nodes.nth(1).locator('.atlas-node-body').click();
     await expect(title).not.toHaveText(titleA);
     await expect(inspector).toHaveJSProperty('scrollTop', 0);
 
     // 切回节点 A：恢复之前的滚动位置
-    await nodes.nth(0).click();
+    await nodes.nth(0).locator('.atlas-node-body').click();
     await expect(title).toHaveText(titleA);
     await expect.poll(() => inspector.evaluate((el) => el.scrollTop)).toBe(scrolledA);
 
@@ -423,8 +423,18 @@ test.describe('抽屉联动关闭与过渡', () => {
     await page.goto('/');
     await waitForCanvas(page);
 
+    const firstRfNode = page.locator('.react-flow__node').first();
+    const heights = await firstRfNode.evaluate((el) => {
+      const card = el.querySelector('.atlas-node');
+      return {
+        rf: el.getBoundingClientRect().height,
+        card: card ? card.getBoundingClientRect().height : 0,
+      };
+    });
+    expect(Math.abs(heights.rf - heights.card)).toBeLessThanOrEqual(2);
+
     const inspector = page.locator('[data-testid="inspector-panel"]');
-    await page.locator('.react-flow__node').first().click();
+    await firstRfNode.locator('.atlas-node-body').click();
     await expect(inspector).toBeVisible();
     // 挂载后下一帧加上 open class，触发滑入过渡
     await expect(inspector).toHaveClass(/open/);
@@ -443,10 +453,11 @@ test.describe('抽屉联动关闭与过渡', () => {
     await page.locator('[data-testid="btn-lock"]').click();
 
     const node = page.locator('.react-flow__node').first();
+    const body = node.locator('.atlas-node-body');
     const inspector = page.locator('[data-testid="inspector-panel"]');
 
     // 拖拽节点：松手后不应弹出抽屉
-    const box = await node.boundingBox();
+    const box = await body.boundingBox();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
     await page.mouse.move(box.x + box.width / 2 + 140, box.y + box.height / 2 + 80, { steps: 6 });
@@ -455,7 +466,7 @@ test.describe('抽屉联动关闭与过渡', () => {
     await expect(inspector).toHaveCount(0);
 
     // 普通点击：弹出抽屉
-    await node.click();
+    await body.click();
     await expect(inspector).toBeVisible();
   });
 
@@ -464,7 +475,7 @@ test.describe('抽屉联动关闭与过渡', () => {
     await waitForCanvas(page);
 
     const inspector = page.locator('[data-testid="inspector-panel"]');
-    await page.locator('.react-flow__node').first().click();
+    await page.locator('.react-flow__node').first().locator('.atlas-node-body').click();
     await expect(inspector).toBeVisible();
 
     // 在空白处按下并拖动画布平移：松手后抽屉应保持打开
@@ -504,7 +515,7 @@ test.describe('全屏', () => {
     expect(contains).toEqual({ toolbar: true, canvas: true, topbar: false });
 
     // 抽屉在全屏里照常工作
-    await page.locator('.react-flow__node').first().click();
+    await page.locator('.react-flow__node').first().locator('.atlas-node-body').click();
     await expect(page.locator('[data-testid="inspector-panel"]')).toBeVisible();
 
     // 再点一次退出全屏
