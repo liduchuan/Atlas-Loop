@@ -32,8 +32,20 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
-      - name: Test
+      - name: Install dependencies
+        run: npm install --no-save
+
+      - name: Unit & Pipeline Tests
         run: npm test
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+
+      - name: Verify All Sample Atlases
+        run: npm run verify:samples
+
+      - name: Run Playwright E2E
+        run: npm run test:e2e
 
       - name: Publish
         env:

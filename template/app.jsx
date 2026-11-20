@@ -17,6 +17,7 @@ import { NuqsAdapter } from 'nuqs/adapters/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { highlightSnippet, resolveSnippetPlan } from './snippet-highlight.js';
+import { normalizeLanguageHint, walkSnippetAnchors } from './snippet-lang.mjs';
 
 const I18N_DICT = {
   zh: {
@@ -37,9 +38,11 @@ const I18N_DICT = {
     exitFullscreen: '退出全屏',
     reset: '重置',
     legend: '图例',
+    feedbackEdge: '反馈回路',
     exportPng: '导出 PNG',
     exportZip: '导出 ZIP',
     exportZipFailed: 'ZIP 导出失败，请刷新页面后重试。',
+    exportZipFileProtocolHint: '当前以本地 file:// 打开，浏览器安全策略会阻止读取同级子图，已导出当前单图；如需将父子图一起打包，请运行 atlas-loop pack。',
     scopeNotes: '范围与待确认',
     learningPath: '推荐顺序',
     expandDetail: '展开细节',
@@ -62,6 +65,7 @@ const I18N_DICT = {
     miniMap: '缩览图',
     inputsLabel: '前置 / 输入',
     outputsLabel: '结果 / 产出',
+    kvColon: '：',
     mechanismsLabel: '内部机制与影响',
     watchoutsLabel: '理解注意点',
     anchorsLabel: '关联依据与锚点',
@@ -72,8 +76,8 @@ const I18N_DICT = {
     unverifiedTitle: '待确认项说明',
     noSearchMatches: '无匹配节点',
     nestedBadge: '内部细节',
-    depthPrefix: '因果链深度：',
-    hopsUnit: ' 跳',
+    depthPrefix: '知识深度：',
+    depthUnit: ' 阶',
     audiencePrefix: '读者档位：',
     close: '关闭',
     roles: {
@@ -104,9 +108,11 @@ const I18N_DICT = {
     exitFullscreen: 'Exit Fullscreen',
     reset: 'Reset',
     legend: 'Legend',
+    feedbackEdge: 'Feedback Loop',
     exportPng: 'Export PNG',
     exportZip: 'Export ZIP',
     exportZipFailed: 'ZIP export failed. Refresh the page and try again.',
+    exportZipFileProtocolHint: 'Browser security blocks reading sibling child HTML files over file://. Exported current map only; run atlas-loop pack to bundle linked sub-atlases offline.',
     scopeNotes: 'Scope & Notes',
     learningPath: 'Learning Order',
     expandDetail: 'Details',
@@ -129,6 +135,7 @@ const I18N_DICT = {
     miniMap: 'Mini Map',
     inputsLabel: 'Inputs / Conditions',
     outputsLabel: 'Outputs / Effects',
+    kvColon: ': ',
     mechanismsLabel: 'Mechanism & Side Effects',
     watchoutsLabel: 'Watchouts',
     anchorsLabel: 'Evidence & Anchors',
@@ -140,7 +147,7 @@ const I18N_DICT = {
     noSearchMatches: 'No matching nodes',
     nestedBadge: 'Sub-node',
     depthPrefix: 'Depth: ',
-    hopsUnit: ' hops',
+    depthUnit: ' tiers',
     audiencePrefix: 'Audience: ',
     close: 'Close',
     roles: {
@@ -162,6 +169,7 @@ function resolveI18n(meta = {}) {
   return {
     ...base,
     ...custom,
+    depthUnit: custom.depthUnit ?? custom.hopsUnit ?? base.depthUnit,
     roles: { ...base.roles, ...(custom.roles || {}) },
   };
 }
@@ -169,7 +177,7 @@ function resolveI18n(meta = {}) {
 const MIN_DEPTH = 2;
 const MAX_DEPTH = 6;
 
-// 因果链深度：meta.depth 是构建期已校验过的因果跳数；缺省时退回 3 跳
+// 知识深度：meta.depth 是构建期已校验过的认知阶梯推进阶数；缺省时退回 3 阶
 function resolveDepth(meta) {
   const d = Number(meta.depth);
   if (Number.isInteger(d) && d >= MIN_DEPTH && d <= MAX_DEPTH) return d;
@@ -527,7 +535,90 @@ async function _exportZip(data, meta) {
   // 防止脚本内容意外截断 script 标签（开发包不含此转义，需手动补）
   appScript = appScript.replace(/<\/script/gi, '<\\/script');
 
-  function _buildHtml(atlasData) {
+  function _serializeInlineHljs(doc) {
+    const els = Array.from(doc.querySelectorAll('script[id^="atlas-hljs-"]'));
+    if (els.length === 0) return '';
+    return els
+      .map((el) => {
+        const text = (el.textContent || '').replace(/<\/script/gi, '<\\/script');
+        return `<script type="text/plain" id="${el.id}">${text}</script>`;
+      })
+      .join('\n  ');
+  }
+
+  let devManifestCache = null;
+  const devFileCache = new Map();
+  async function _fetchDevText(url) {
+    if (devFileCache.has(url)) return devFileCache.get(url);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    devFileCache.set(url, text);
+    return text;
+  }
+
+  async function _collectHljsPayload(atlasData, sourceDoc) {
+    const inline = sourceDoc ? _serializeInlineHljs(sourceDoc) : '';
+    if (inline) return inline;
+    if (location.protocol === 'file:') return '';
+    try {
+      if (!devManifestCache) {
+        const manifestText = await _fetchDevText('/__hljs/manifest.json');
+        devManifestCache = JSON.parse(manifestText);
+      }
+      const manifest = devManifestCache;
+      const needed = new Set();
+      let auto = false;
+      walkSnippetAnchors(atlasData, (anchor) => {
+        const plan = resolveSnippetPlan(anchor.content, anchor.language);
+        if (plan.mode === 'auto') auto = true;
+        if (plan.mode === 'language') {
+          const canonical = manifest.aliases?.[normalizeLanguageHint(plan.language)];
+          if (canonical) needed.add(canonical);
+        }
+      });
+      if (auto) {
+        for (const name of manifest.common || []) needed.add(name);
+      }
+      const queue = [...needed];
+      for (const name of queue) {
+        for (const dep of manifest.deps?.[name] || []) {
+          if (!needed.has(dep)) {
+            needed.add(dep);
+            queue.push(dep);
+          }
+        }
+      }
+      if (needed.size === 0) return '';
+
+      const coreSource = await _fetchDevText('/__hljs/core.js');
+      const sorted = [...needed].sort();
+      const langSources = await Promise.all(
+        sorted.map(async (name) => {
+          try {
+            return { name, source: await _fetchDevText(`/__hljs/lang/${name}.js`) };
+          } catch {
+            return null;
+          }
+        })
+      );
+      const parts = [
+        `<script type="text/plain" id="atlas-hljs-manifest">${JSON.stringify(manifest).replace(/</g, '\\u003c')}</script>`,
+        `<script type="text/plain" id="atlas-hljs-core">${coreSource.replace(/<\/script/gi, '<\\/script')}</script>`,
+      ];
+      for (const item of langSources) {
+        if (!item) continue;
+        parts.push(
+          `<script type="text/plain" id="atlas-hljs-lang-${item.name}">${item.source.replace(/<\/script/gi, '<\\/script')}</script>`
+        );
+      }
+      return parts.join('\n  ');
+    } catch {
+      return '';
+    }
+  }
+
+  function _buildHtml(atlasData, hljsHtml) {
     const title = String(atlasData.meta?.title || 'Atlas')
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const lang = String(atlasData.meta?.language || 'zh').split('-')[0];
@@ -547,6 +638,7 @@ async function _exportZip(data, meta) {
       '  <div id="root"></div>',
       '  <script id="atlas-data-json" type="application/json">' + dataJson + '</script>',
       '  <script>' + appScript + '</script>',
+      ...(hljsHtml ? ['  ' + hljsHtml] : []),
       '</body>',
       '</html>',
     ].join('\n');
@@ -560,6 +652,7 @@ async function _exportZip(data, meta) {
     url: pageUrl.href,
     name: curTitle + '.html',
     data: JSON.parse(JSON.stringify(data)),
+    sourceDoc: document,
     discoveredFrom: null,
   }];
   const byUrl = new Map([[pageUrl.href, records[0]]]);
@@ -575,6 +668,7 @@ async function _exportZip(data, meta) {
     } catch { return null; }
   };
 
+  let skippedFileChildren = false;
   for (let i = 0; i < records.length; i++) {
     const record = records[i];
     for (const dive of deepDives(record.data)) {
@@ -594,10 +688,11 @@ async function _exportZip(data, meta) {
         let name = baseName + '.html';
         for (let suffix = 2; usedNames.has(name); suffix++) name = `${baseName}-${suffix}.html`;
         usedNames.add(name);
-        const child = { url: childUrl, name, data: childData, discoveredFrom: record.url };
+        const child = { url: childUrl, name, data: childData, sourceDoc: childDoc, discoveredFrom: record.url };
         records.push(child);
         byUrl.set(childUrl, child);
       } catch (error) {
+        if (location.protocol === 'file:') skippedFileChildren = true;
         console.warn('[Atlas] Skipped child Atlas in ZIP:', childUrl, error);
       }
     }
@@ -616,7 +711,8 @@ async function _exportZip(data, meta) {
       const parent = byUrl.get(parentUrl) || byUrl.get(record.discoveredFrom);
       record.data.meta.parentMapHtml = parent ? encodeURIComponent(parent.name) : null;
     }
-    files.push({ name: record.name, bytes: enc.encode(_buildHtml(record.data)) });
+    const hljsHtml = await _collectHljsPayload(record.data, record.sourceDoc);
+    files.push({ name: record.name, bytes: enc.encode(_buildHtml(record.data, hljsHtml)) });
   }
 
   const zipBytes = _buildZip(files);
@@ -626,19 +722,65 @@ async function _exportZip(data, meta) {
   a.download = curTitle + '.zip';
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+  return { skippedFileChildren };
+}
+
+function visualTextUnits(str) {
+  let units = 0;
+  for (const ch of String(str || '')) {
+    units += ch.charCodeAt(0) > 0xff ? 1 : 0.55;
+  }
+  return units;
+}
+
+function estimateNodeHeight(item, detailCount, isSub) {
+  const charsPerLine = isSub ? 17 : 20;
+  const titleLines = Math.max(1, Math.min(3, Math.ceil(visualTextUnits(item.title) / charsPerLine)));
+  const summaryLines = item.summary
+    ? Math.min(2, Math.max(1, Math.ceil(visualTextUnits(item.summary) / (isSub ? 20 : 23))))
+    : 0;
+  const hasChildLink = Boolean(item.deepDive?.childAtlasUrl);
+  const hasFooter = detailCount > 0 || (Array.isArray(item.anchors) && item.anchors.length > 0);
+  const base =
+    (isSub ? 64 : 74) +
+    titleLines * 18 +
+    summaryLines * 17 +
+    (hasChildLink ? 32 : 0) +
+    (hasFooter ? 30 : 0);
+  return isSub ? Math.max(108, Math.min(200, base)) : Math.max(128, Math.min(240, base));
+}
+
+function buildEdgeStyle(label, isFeedback, isSubEdge = false) {
+  if (isFeedback) {
+    return {
+      label: label || '',
+      type: 'smoothstep',
+      pathOptions: { borderRadius: 12, offset: 28 },
+      className: 'atlas-edge-feedback',
+      data: { kind: 'feedback' },
+      style: { stroke: '#b45309', strokeWidth: 1.5, strokeDasharray: '5 4' },
+      labelStyle: { fill: '#92400e', fontSize: isSubEdge ? 10.5 : 11, fontWeight: 500 },
+      labelBgStyle: { fill: '#fffbeb', fillOpacity: 0.96 },
+      labelBgPadding: [6, 3],
+      labelBgBorderRadius: 4,
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#b45309' },
+    };
+  }
+  return {
+    label: label || '',
+    data: { kind: 'progression' },
+    style: isSubEdge ? { stroke: '#a1a1aa', strokeWidth: 1.4 } : { stroke: '#71717a', strokeWidth: 1.5 },
+    labelStyle: isSubEdge
+      ? { fill: '#52525b', fontSize: 10.5, fontWeight: 500 }
+      : { fill: '#27272a', fontSize: 11, fontWeight: 500 },
+    labelBgStyle: { fill: '#ffffff', fillOpacity: 0.95 },
+    labelBgPadding: isSubEdge ? [5, 2] : [6, 3],
+    labelBgBorderRadius: 4,
+    markerEnd: { type: MarkerType.ArrowClosed, color: isSubEdge ? '#a1a1aa' : '#71717a' },
+  };
 }
 
 function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
-  const g = new dagre.graphlib.Graph();
-  g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({
-    rankdir: 'LR',
-    nodesep: 64,
-    ranksep: 116,
-    marginx: 44,
-    marginy: 44,
-  });
-
   const rawNodes = Array.isArray(data.nodes) ? data.nodes : [];
   const rawEdges = Array.isArray(data.edges) ? data.edges : [];
 
@@ -648,6 +790,32 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
   });
 
   const visibleTopSet = new Set(visibleTopNodes.map((n) => n.id));
+  let maxLabelPx = 0;
+  for (const e of rawEdges) {
+    if (!visibleTopSet.has(e.source) || !visibleTopSet.has(e.target)) continue;
+    maxLabelPx = Math.max(maxLabelPx, visualTextUnits(e.label) * 11 + 14);
+  }
+  for (const n of visibleTopNodes) {
+    const detailCount = Array.isArray(n.detailGraph?.nodes) ? n.detailGraph.nodes.length : 0;
+    if (expandedIds.has(n.id) && detailCount > 0) {
+      maxLabelPx = Math.max(maxLabelPx, visualTextUnits(t.detailEdgeLabel) * 10.5 + 12);
+      for (const se of n.detailGraph.edges || []) {
+        maxLabelPx = Math.max(maxLabelPx, visualTextUnits(se.label) * 10.5 + 12);
+      }
+    }
+  }
+  const ranksep = Math.min(220, Math.max(140, Math.round(maxLabelPx + 44)));
+
+  const g = new dagre.graphlib.Graph();
+  g.setDefaultEdgeLabel(() => ({}));
+  g.setGraph({
+    rankdir: 'LR',
+    nodesep: 64,
+    ranksep,
+    marginx: 44,
+    marginy: 44,
+  });
+
   const flowNodes = [];
   const flowEdges = [];
 
@@ -655,7 +823,7 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
     const detailCount = Array.isArray(n.detailGraph?.nodes) ? n.detailGraph.nodes.length : 0;
     const isExpanded = expandedIds.has(n.id) && detailCount > 0;
     const width = 296;
-    const height = 144;
+    const height = estimateNodeHeight(n, detailCount, false);
     g.setNode(n.id, { width, height });
 
     flowNodes.push({
@@ -679,6 +847,7 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
       const incomingCount = new Map();
       for (const sn of subNodes) incomingCount.set(sn.id, 0);
       for (const se of subEdges) {
+        if ((se.kind || 'progression') === 'feedback') continue;
         if (incomingCount.has(se.target)) {
           incomingCount.set(se.target, incomingCount.get(se.target) + 1);
         }
@@ -687,7 +856,7 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
       for (const sn of subNodes) {
         const subFlowId = `${n.id}::${sn.id}`;
         const sw = 264;
-        const sh = 120;
+        const sh = estimateNodeHeight(sn, 0, true);
         g.setNode(subFlowId, { width: sw, height: sh });
         flowNodes.push({
           id: subFlowId,
@@ -716,6 +885,7 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
             source: n.id,
             target: subFlowId,
             label: t.detailEdgeLabel,
+            data: { kind: 'progression' },
             style: { stroke: '#71717a', strokeWidth: 1.4, strokeDasharray: '4 4' },
             labelStyle: { fill: '#52525b', fontSize: 10.5, fontWeight: 500 },
             labelBgStyle: { fill: '#fafafa', fillOpacity: 0.94 },
@@ -729,17 +899,14 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
         const se = subEdges[idx];
         const sId = `${n.id}::${se.source}`;
         const tId = `${n.id}::${se.target}`;
-        g.setEdge(sId, tId);
+        const isFeedback = se.kind === 'feedback';
+        // 反馈回路不加入 Dagre 有向拓扑，避免倒转从左到右的认知阶梯排布
+        if (!isFeedback) g.setEdge(sId, tId);
         flowEdges.push({
           id: `subedge::${n.id}::${se.id || idx}`,
           source: sId,
           target: tId,
-          label: se.label || '',
-          style: { stroke: '#a1a1aa', strokeWidth: 1.4 },
-          labelStyle: { fill: '#52525b', fontSize: 10.5, fontWeight: 500 },
-          labelBgStyle: { fill: '#ffffff', fillOpacity: 0.94 },
-          labelBgPadding: [5, 2],
-          markerEnd: { type: MarkerType.ArrowClosed, color: '#a1a1aa' },
+          ...buildEdgeStyle(se.label, isFeedback, true),
         });
       }
     }
@@ -748,18 +915,13 @@ function buildGraphElements(data, activeStream, expandedIds, t, handlers) {
   for (let idx = 0; idx < rawEdges.length; idx++) {
     const e = rawEdges[idx];
     if (!visibleTopSet.has(e.source) || !visibleTopSet.has(e.target)) continue;
-    g.setEdge(e.source, e.target);
+    const isFeedback = e.kind === 'feedback';
+    if (!isFeedback) g.setEdge(e.source, e.target);
     flowEdges.push({
       id: e.id || `edge-${idx}`,
       source: e.source,
       target: e.target,
-      label: e.label || '',
-      style: { stroke: '#71717a', strokeWidth: 1.5 },
-      labelStyle: { fill: '#27272a', fontSize: 11, fontWeight: 500 },
-      labelBgStyle: { fill: '#ffffff', fillOpacity: 0.95 },
-      labelBgPadding: [6, 3],
-      labelBgBorderRadius: 4,
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#71717a' },
+      ...buildEdgeStyle(e.label, isFeedback, false),
     });
   }
 
@@ -1191,10 +1353,10 @@ function pngFileName(title) {
   return `${(cleaned || 'atlas').slice(0, 80)}.png`;
 }
 
-async function exportVisibleCanvas(container, title, rf) {
+async function exportFullCanvas(container, title, rf) {
   const flow = container.querySelector('.react-flow');
   if (!flow) return;
-  if (!rf) { console.error('[Atlas] exportVisibleCanvas: rf instance is null, export skipped'); return; }
+  if (!rf) { console.error('[Atlas] exportFullCanvas: rf instance is null, export skipped'); return; }
 
   // 计算所有节点的边界框（流坐标）
   const nodes = rf.getNodes();
@@ -1230,35 +1392,39 @@ async function exportVisibleCanvas(container, title, rf) {
   if (!prevPos || prevPos === 'static') container.style.position = 'relative';
   container.appendChild(overlay);
 
-  // 等遮罩先渲染出来，再改视口
-  await new Promise((r) => requestAnimationFrame(r));
-
   const prevViewport = rf.getViewport();
-  rf.setViewport({ x: -minX * scale, y: -minY * scale, zoom: scale }, { duration: 0 });
+  let dataUrl = null;
+  try {
+    // 等遮罩先渲染出来，再改视口
+    await new Promise((r) => requestAnimationFrame(r));
 
-  // 等视口变换写入 DOM
-  await new Promise((r) => requestAnimationFrame(r));
+    rf.setViewport({ x: -minX * scale, y: -minY * scale, zoom: scale }, { duration: 0 });
 
-  const dataUrl = await toPng(flow, {
-    backgroundColor: '#fafafa',
-    width: imgW,
-    height: imgH,
-    pixelRatio,
-    skipFonts: true,
-    filter: (node) => {
-      const className = node?.classList;
-      if (!className) return true;
-      return !className.contains('react-flow__minimap')
-        && !className.contains('react-flow__controls')
-        && !className.contains('react-flow__attribution');
-    },
-  });
+    // 等视口变换写入 DOM
+    await new Promise((r) => requestAnimationFrame(r));
 
-  // 恢复视口，移除遮罩
-  rf.setViewport(prevViewport, { duration: 0 });
-  container.removeChild(overlay);
-  if (!prevPos || prevPos === 'static') container.style.position = prevPos;
+    dataUrl = await toPng(flow, {
+      backgroundColor: '#fafafa',
+      width: imgW,
+      height: imgH,
+      pixelRatio,
+      skipFonts: true,
+      filter: (node) => {
+        const className = node?.classList;
+        if (!className) return true;
+        return !className.contains('react-flow__minimap')
+          && !className.contains('react-flow__controls')
+          && !className.contains('react-flow__attribution');
+      },
+    });
+  } finally {
+    // 无论成功或异常都恢复视口并清理遮罩
+    rf.setViewport(prevViewport, { duration: 0 });
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    if (!prevPos || prevPos === 'static') container.style.position = prevPos;
+  }
 
+  if (!dataUrl) return;
   const link = document.createElement('a');
   link.href = dataUrl;
   link.download = pngFileName(title);
@@ -1271,7 +1437,7 @@ function AtlasCanvasApp({ data }) {
   const streams = Array.isArray(data.streams) ? data.streams : [];
 
   const depth = resolveDepth(meta);
-  // 浅图收起用不上的控件：两跳就讲完的主题不需要搜索与小地图
+  // 浅图收起用不上的控件：两阶就讲完的主题不需要搜索与小地图
   const isCompact = depth <= 2;
   // 图例只列出这张地图实际用到的角色
   const usedRoles = useMemo(() => {
@@ -1284,6 +1450,13 @@ function AtlasCanvasApp({ data }) {
     }
     return set;
   }, [data.nodes]);
+
+  const hasFeedbackEdges = useMemo(() => {
+    if ((data.edges || []).some((e) => e.kind === 'feedback')) return true;
+    return (data.nodes || []).some((n) =>
+      (n.detailGraph?.edges || []).some((se) => se.kind === 'feedback')
+    );
+  }, [data.edges, data.nodes]);
 
   // 工具栏状态绑定到 URL query（nuqs）：刷新/分享链接即恢复
   const [activeStream, setActiveStream] = useQueryState(
@@ -1309,6 +1482,16 @@ function AtlasCanvasApp({ data }) {
   );
   const [exporting, setExporting] = useState(false);
   const [exportingZip, setExportingZip] = useState(false);
+  const [toastMsg, setToastMsg] = useState('');
+  const toastTimerRef = useRef(null);
+  const showToast = useCallback((msg) => {
+    setToastMsg(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastMsg(''), 6000);
+  }, []);
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
   const canvasRef = useRef(null);
   // 全屏目标：工具栏 + 画布 + 抽屉的整体容器（不含页头）
   const bodyRef = useRef(null);
@@ -1327,7 +1510,7 @@ function AtlasCanvasApp({ data }) {
 
   const rf = useReactFlow();
   // onInit 回调拿到的实例是 ReactFlow 完成挂载后的稳定引用，
-  // 专用于 exportVisibleCanvas（避免 context 时序问题导致 rf 为 undefined）
+  // 专用于 exportFullCanvas（避免 context 时序问题导致 rf 为 undefined）
   const rfInitRef = useRef(null);
   const pendingFocusRef = useRef(null);
 
@@ -1681,7 +1864,7 @@ function AtlasCanvasApp({ data }) {
             >
               {t.depthPrefix}
               {depth}
-              {t.hopsUnit}
+              {t.depthUnit}
             </span>
             {meta.audience && (
               <span className="atlas-level-badge" data-testid="audience-badge">
@@ -1891,17 +2074,19 @@ function AtlasCanvasApp({ data }) {
             >
               <IconLegend />
             </button>
-            <button
-              type="button"
-              data-testid="btn-minimap"
-              aria-pressed={showMiniMap}
-              aria-label={t.miniMap}
-              title={t.miniMap}
-              className={`atlas-ctrl-btn ${showMiniMap ? 'active' : ''}`}
-              onClick={() => setShowMiniMap((v) => !v)}
-            >
-              <IconMiniMap />
-            </button>
+            {!isCompact && (
+              <button
+                type="button"
+                data-testid="btn-minimap"
+                aria-pressed={showMiniMap}
+                aria-label={t.miniMap}
+                title={t.miniMap}
+                className={`atlas-ctrl-btn ${showMiniMap ? 'active' : ''}`}
+                onClick={() => setShowMiniMap((v) => !v)}
+              >
+                <IconMiniMap />
+              </button>
+            )}
             <button
               type="button"
               data-testid="btn-export-png"
@@ -1913,7 +2098,7 @@ function AtlasCanvasApp({ data }) {
                 if (!canvasRef.current || exporting) return;
                 setExporting(true);
                 try {
-                  await exportVisibleCanvas(canvasRef.current, meta.title, rfInitRef.current ?? rf);
+                  await exportFullCanvas(canvasRef.current, meta.title, rfInitRef.current ?? rf);
                 } finally {
                   setExporting(false);
                 }
@@ -1931,12 +2116,17 @@ function AtlasCanvasApp({ data }) {
               onClick={async () => {
                 if (exportingZip) return;
                 setExportingZip(true);
-                try { await _exportZip(data, meta); }
-                catch (error) {
+                try {
+                  const res = await _exportZip(data, meta);
+                  if (res?.skippedFileChildren) {
+                    showToast(t.exportZipFileProtocolHint);
+                  }
+                } catch (error) {
                   console.error('[Atlas] ZIP export failed:', error);
-                  window.alert(t.exportZipFailed);
+                  showToast(t.exportZipFailed);
+                } finally {
+                  setExportingZip(false);
                 }
-                finally { setExportingZip(false); }
               }}
             >
               <IconExport />
@@ -2004,7 +2194,7 @@ function AtlasCanvasApp({ data }) {
             }}
           >
             <Background gap={22} size={1} color="#e4e4e7" />
-            {showMiniMap && (
+            {!isCompact && showMiniMap && (
               <MiniMap
                 pannable
                 zoomable
@@ -2027,6 +2217,12 @@ function AtlasCanvasApp({ data }) {
                   <span>{t.roles[rKey] || rKey}</span>
                 </div>
               ))}
+              {hasFeedbackEdges && (
+                <div className="atlas-legend-row" data-testid="legend-feedback-row">
+                  <span className="atlas-legend-line" aria-hidden="true" />
+                  <span>{t.feedbackEdge}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2090,13 +2286,13 @@ function AtlasCanvasApp({ data }) {
               <section className="atlas-sec">
                 {drawerItem.keyFactors.inputs && (
                   <div className="atlas-kv">
-                    <strong>{t.inputsLabel}：</strong>
+                    <strong>{t.inputsLabel}{t.kvColon}</strong>
                     <span>{drawerItem.keyFactors.inputs}</span>
                   </div>
                 )}
                 {drawerItem.keyFactors.outputs && (
                   <div className="atlas-kv">
-                    <strong>{t.outputsLabel}：</strong>
+                    <strong>{t.outputsLabel}{t.kvColon}</strong>
                     <span>{drawerItem.keyFactors.outputs}</span>
                   </div>
                 )}
@@ -2193,13 +2389,27 @@ function AtlasCanvasApp({ data }) {
                     })
                   }
                 >
-                  ? {t.openDeepDiveBtn}
+                  <IconDeepDive />
+                  <span>{t.openDeepDiveBtn}</span>
                 </button>
               </section>
             )}
           </aside>
         )}
       </main>
+      {toastMsg && (
+        <div className="atlas-toast" data-testid="atlas-toast" role="status" aria-live="polite">
+          <span>{toastMsg}</span>
+          <button
+            type="button"
+            className="atlas-toast-close"
+            aria-label={t.close}
+            onClick={() => setToastMsg('')}
+          >
+            ×
+          </button>
+        </div>
+      )}
       </div>
 
       <DeepDiveModal

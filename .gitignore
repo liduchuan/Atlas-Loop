@@ -3,3 +3,5 @@ node_modules/
 *.log
 bun.lock
 package-lock.json
+playwright-report/
+test-results/

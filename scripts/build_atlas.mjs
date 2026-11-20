@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { PLAIN_LANGUAGES, normalizeLanguageHint, resolveSnippetPlan, walkSnippetAnchors } from '../template/snippet-lang.js';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { PLAIN_LANGUAGES, normalizeLanguageHint, resolveSnippetPlan, walkSnippetAnchors } from '../template/snippet-lang.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SKILL_ROOT = path.resolve(__dirname, '..');
 const SHELL_PATH = path.join(SKILL_ROOT, 'assets', 'viewer-shell.html');
 
-const VALID_ROLES = new Set([
+export const VALID_ROLES = new Set([
   'entry',
   'core',
   'branch',
@@ -18,6 +18,8 @@ const VALID_ROLES = new Set([
   'outcome',
 ]);
 
+export const VALID_EDGE_KINDS = new Set(['progression', 'feedback']);
+
 const SECRET_PATTERNS = [
   /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
   /\bsk-[A-Za-z0-9]{24,}\b/,
@@ -25,7 +27,7 @@ const SECRET_PATTERNS = [
   /\bAKIA[0-9A-Z]{16}\b/,
 ];
 
-// 深度 = 因果链上允许的跳数。评分 → 深度：depth = score / 2 + 1（2 分→2 跳，10 分→6 跳）
+// 深度 = 认知阶梯的推进阶数。评分 → 深度：depth = score / 2 + 1（2 分→2 阶，10 分→6 阶）
 const MIN_DEPTH = 2;
 const MAX_DEPTH = 6;
 const TOP_NODE_SOFT_CAP = 20;
@@ -38,10 +40,11 @@ const LAZY_PROMPT_PATTERNS = [
   /^\s*more (details|info)\b/i,
 ];
 
-// 顶层图上的最长因果链（边数）。存在环时返回 null——因果链必须是 DAG
-function longestChain(nodes, edges) {
+// 顶层图上的最长认知阶梯（推进边数，排除 kind === 'feedback' 的反馈回路）。推进边成环时返回 null
+export function longestChain(nodes, edges) {
   const out = new Map(nodes.map((n) => [n.id, []]));
   for (const e of edges) {
+    if ((e.kind || 'progression') === 'feedback') continue;
     if (out.has(e.source)) out.get(e.source).push(e.target);
   }
   const state = new Map();
@@ -77,7 +80,7 @@ function parseArgs(argv) {
   return args;
 }
 
-function slugify(input, fallback = 'subject') {
+export function slugify(input, fallback = 'subject') {
   const s = String(input || '')
     .trim()
     .replace(/[\/\\:*?"<>|\s]+/g, '-')
@@ -156,7 +159,7 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
-function validateAndEnrich(data) {
+export function validateAndEnrich(data) {
   const errors = [];
   const warnings = [];
   if (!data || typeof data !== 'object') {
@@ -179,11 +182,11 @@ function validateAndEnrich(data) {
   const depth = Number(meta.depth);
   if (!Number.isInteger(depth) || depth < MIN_DEPTH || depth > MAX_DEPTH) {
     errors.push(
-      `缺少或无效的 meta.depth "${meta.depth}"：必须是 ${MIN_DEPTH}–${MAX_DEPTH} 的整数（因果链允许的跳数）`
+      `缺少或无效的 meta.depth "${meta.depth}"：必须是 ${MIN_DEPTH}–${MAX_DEPTH} 的整数（认知阶梯允许的推进阶数）`
     );
   }
   if (!meta.depthReason || !String(meta.depthReason).trim()) {
-    errors.push('缺少 meta.depthReason（用一句话写明深度判断依据：学习者能补上几跳中间环节）');
+    errors.push('缺少 meta.depthReason（用一句话写明深度判断依据：学习者能自行补足几阶跨度）');
   }
 
   const nodeIds = new Set();
@@ -281,12 +284,22 @@ function validateAndEnrich(data) {
       for (const sn of subNodes) {
         if (!sn.id || !sn.title) errors.push(`节点 ${n.id} 的 detailGraph 子节点缺少 id/title`);
         if (subIds.has(sn.id)) errors.push(`节点 ${n.id} 的 detailGraph 子节点 id 重复："${sn.id}"`);
+        if (sn.role !== undefined && !VALID_ROLES.has(sn.role)) {
+          errors.push(
+            `子节点 ${n.id}::${sn.id}：无效的 role "${sn.role}"，必须是以下之一：${[...VALID_ROLES].join(', ')}`
+          );
+        }
         subIds.add(sn.id);
         verifyAnchors(sn.anchors, `子节点 ${n.id}::${sn.id}`);
       }
       for (const se of n.detailGraph.edges || []) {
         if (!subIds.has(se.source) || !subIds.has(se.target)) {
           errors.push(`节点 ${n.id} 的 detailGraph 边引用了未知子节点：${se.source} -> ${se.target}`);
+        }
+        if (se.kind !== undefined && !VALID_EDGE_KINDS.has(se.kind)) {
+          errors.push(
+            `节点 ${n.id} 的 detailGraph 边 ${se.source} -> ${se.target}：无效的 edge.kind "${se.kind}"，必须是 progression 或 feedback`
+          );
         }
         if (!se.label || !String(se.label).trim()) {
           errors.push(`节点 ${n.id} 的 detailGraph 边 ${se.source} -> ${se.target}：必须填写 label`);
@@ -295,17 +308,22 @@ function validateAndEnrich(data) {
     }
   }
 
-  // 深度检查：顶层最长因果链必须真的连到 meta.depth 跳。深度是可证伪的，节点数不是
-  const chain = longestChain(nodes, data.edges || []);
+  // 深度检查：顶层最长认知阶梯必须真的连到 meta.depth 阶。深度是可证伪的，节点数不是
+  const edges = Array.isArray(data.edges) ? data.edges : [];
+  const chain = longestChain(nodes, edges);
   if (chain === null) {
-    errors.push('顶层边构成了环，无法确定因果链：请把循环关系改成单向因果或收进 detailGraph');
+    errors.push(
+      '顶层推进边构成了环，无法确定认知阶梯深度：若表达系统真实反馈或迭代回流，请在该边标注 "kind": "feedback"；否则请改为单向递进或收进 detailGraph'
+    );
   } else if (Number.isInteger(depth)) {
     if (chain < depth) {
       errors.push(
-        `meta.depth 为 ${depth}，但顶层最长因果链只有 ${chain} 跳：因果链没有连到底。要么补上被省略的中间环节，要么下调 depth`
+        `meta.depth 为 ${depth} 阶，但顶层最长认知阶梯只有 ${chain} 阶：主干推进未达到目标深度。请补足更深层的机理/跃迁节点，或下调 depth`
       );
     } else if (chain > MAX_DEPTH + 2) {
-      warnings.push(`顶层最长因果链有 ${chain} 跳：超过 ${MAX_DEPTH + 2} 跳后读者很难一次跟完，考虑收进 detailGraph`);
+      warnings.push(
+        `顶层最长认知阶梯有 ${chain} 阶：超过 ${MAX_DEPTH + 2} 阶后读者很难一次消化，考虑收进 detailGraph`
+      );
     }
   }
   if (nodes.length > TOP_NODE_SOFT_CAP) {
@@ -332,12 +350,19 @@ function validateAndEnrich(data) {
     }
   }
 
-  for (const e of data.edges || []) {
+  let feedbackEdgeCount = 0;
+  for (const e of edges) {
     if (!nodeIds.has(e.source) || !nodeIds.has(e.target)) {
       errors.push(`边引用了未知节点：${e.source} -> ${e.target}`);
     }
+    if (e.kind !== undefined && !VALID_EDGE_KINDS.has(e.kind)) {
+      errors.push(
+        `边 ${e.source} -> ${e.target}：无效的 edge.kind "${e.kind}"，必须是 progression 或 feedback`
+      );
+    }
+    if (e.kind === 'feedback') feedbackEdgeCount++;
     if (!e.label || !String(e.label).trim()) {
-      errors.push(`边 ${e.source} -> ${e.target}：必须填写 label，以说明关系或分支条件`);
+      errors.push(`边 ${e.source} -> ${e.target}：必须填写 label，以说明推进关系、反馈机制或分支条件`);
     }
   }
 
@@ -352,35 +377,28 @@ function validateAndEnrich(data) {
     throw new Error(`AtlasGraphData 校验失败：\n- ${errors.join('\n- ')}`);
   }
 
-  return { data, warnings };
+  return { data, warnings, feedbackEdgeCount };
 }
 
-function main() {
-  const args = parseArgs(process.argv);
-  if (!args.data) {
-    console.error('用法：node build_atlas.mjs --data <graph-data.json> [--out <output.html>]');
-    process.exit(1);
-  }
+export function buildAtlasHtml({ data, dataPath, outPath, write = true } = {}) {
   if (!fs.existsSync(SHELL_PATH)) {
-    console.error(`缺少查看器外壳模板：${SHELL_PATH}`);
-    process.exit(1);
+    throw new Error(`缺少查看器外壳模板：${SHELL_PATH}`);
   }
-
-  const raw = JSON.parse(fs.readFileSync(args.data, 'utf8'));
-  const { data: validated, warnings } = validateAndEnrich(raw);
+  const raw = data !== undefined ? data : JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+  const { data: validated, warnings, feedbackEdgeCount } = validateAndEnrich(raw);
   const meta = validated.meta;
 
-  let outPath = args.out;
-  if (!outPath) {
+  let resolvedOut = outPath;
+  if (!resolvedOut) {
     const baseSlug = slugify(meta.title, 'learning');
     if (Number(meta.level) > 0 && meta.drillDownTarget) {
       const subSlug = slugify(meta.drillDownTarget, 'detail');
-      outPath = path.resolve(process.cwd(), `${baseSlug}-sub-${subSlug}-atlas.html`);
+      resolvedOut = path.resolve(process.cwd(), `${baseSlug}-sub-${subSlug}-atlas.html`);
     } else {
-      outPath = path.resolve(process.cwd(), `${baseSlug}-atlas.html`);
+      resolvedOut = path.resolve(process.cwd(), `${baseSlug}-atlas.html`);
     }
   } else {
-    outPath = path.resolve(outPath);
+    resolvedOut = path.resolve(resolvedOut);
   }
 
   const shellHtml = fs.readFileSync(SHELL_PATH, 'utf8');
@@ -392,19 +410,48 @@ function main() {
     .replace('__ATLAS_DATA_JSON__', () => safeJsonPayload)
     .replace('<!--__ATLAS_HLJS_PAYLOAD__-->', () => hljsPayloadFor(validated));
 
-  fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  fs.writeFileSync(outPath, finalHtml, 'utf8');
+  if (write) {
+    fs.mkdirSync(path.dirname(resolvedOut), { recursive: true });
+    fs.writeFileSync(resolvedOut, finalHtml, 'utf8');
+  }
 
+  return {
+    ok: true,
+    outputHtml: resolvedOut,
+    bytes: write ? fs.statSync(resolvedOut).size : Buffer.byteLength(finalHtml, 'utf8'),
+    nodeCount: validated.nodes.length,
+    streamCount: validated.streams.length,
+    depth: meta.depth,
+    feedbackEdgeCount,
+    warnings,
+    html: finalHtml,
+    data: validated,
+  };
+}
+
+export function main(argv = process.argv) {
+  const args = parseArgs(argv);
+  if (!args.data) {
+    console.error('用法：node build_atlas.mjs --data <graph-data.json> [--out <output.html>]');
+    process.exit(1);
+  }
+  if (!fs.existsSync(SHELL_PATH)) {
+    console.error(`缺少查看器外壳模板：${SHELL_PATH}`);
+    process.exit(1);
+  }
+
+  const res = buildAtlasHtml({ dataPath: args.data, outPath: args.out, write: true });
   console.log(
     JSON.stringify(
       {
-        ok: true,
-        outputHtml: outPath,
-        bytes: fs.statSync(outPath).size,
-        nodeCount: validated.nodes.length,
-        streamCount: validated.streams.length,
-        depth: meta.depth,
-        ...(warnings.length > 0 ? { warnings } : {}),
+        ok: res.ok,
+        outputHtml: res.outputHtml,
+        bytes: res.bytes,
+        nodeCount: res.nodeCount,
+        streamCount: res.streamCount,
+        depth: res.depth,
+        feedbackEdgeCount: res.feedbackEdgeCount,
+        ...(res.warnings.length > 0 ? { warnings: res.warnings } : {}),
       },
       null,
       2
@@ -412,4 +459,15 @@ function main() {
   );
 }
 
-main();
+function isDirectCliRun() {
+  if (!process.argv[1]) return false;
+  try {
+    return import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectCliRun()) {
+  main();
+}

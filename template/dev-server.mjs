@@ -78,7 +78,7 @@ async function start() {
     stylesPath,
     appPath,
     path.join(__dirname, 'snippet-highlight.js'),
-    path.join(__dirname, 'snippet-lang.js'),
+    path.join(__dirname, 'snippet-lang.mjs'),
     args.data,
   ].filter((p) => fs.existsSync(p));
   for (const file of watchTargets) {

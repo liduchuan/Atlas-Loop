@@ -16,7 +16,7 @@
     "generatedByModel": "<你当前使用的确切模型名称>",
     "level": 0,
     "depth": 3,
-    "depthReason": "一句话写明深度判断依据：学习者能自己补上几跳中间环节",
+    "depthReason": "一句话写明深度判断依据：学习者能自行补足多少前置，本图推进到哪一阶",
     "audience": "一句话写明这张图假设读者已经会什么",
     "drillDownTarget": null,
     "parentMapHtml": null,
@@ -54,7 +54,7 @@
         "inputs": "前置条件、触发因素、假设或输入",
         "outputs": "结果状态、结论或输出"
       },
-      "mechanismsAndEffects": "内部如何运作、副作用或因果转变",
+      "mechanismsAndEffects": "内部如何运作、量变累积或质变跃迁机制",
       "watchouts": "常见误解、边界情况或约束",
       "confidence": "verified",
       "unverifiedReason": null,
@@ -92,7 +92,8 @@
       "id": "e-1",
       "source": "node-1",
       "target": "node-2",
-      "label": "形成孔隙骨架"
+      "label": "形成孔隙骨架",
+      "kind": "progression"
     }
   ]
 }
@@ -103,31 +104,35 @@
 ## 字段规则
 
 1. **`meta.depth`、`meta.depthReason` 与 `meta.audience`（前两者必填）**：
-   - `depth` 是主干因果链必须连出的跳数，取 `2`–`6` 的整数；`depthReason` 用一句话写明判断依据。深度衡量的是读者的位置，不是主题的体积：节点数不参与判断。
-   - 评分与深度互为反函数（`depth = 分数 / 2 + 1`：2 分→2 跳，10 分→6 跳）。动笔前用 `scripts/profile.mjs read` 取学习者当前档案，没有记录时从 3 跳起步。
+   - `depth` 是主干认知阶梯必须连出的推进阶数，取 `2`–`6` 的整数；`depthReason` 用一句话写明判断依据。深度衡量的是读者的起点与跃迁高度，不是主题的体积：节点数不参与判断。
+   - 评分与深度互为反函数（`depth = 分数 / 2 + 1`：2 分→2 阶，10 分→6 阶）。动笔前用 `scripts/profile.mjs read` 取学习者当前档案，没有记录时从 3 阶起步。
    - `audience` 是可选的一句话，写明这张图假设读者已经会什么；填写后画布页头会显示「读者档位：…」。
-   - `build_atlas.mjs` 会算出顶层最长因果链（边数）并校验：
+   - `build_atlas.mjs` 会算出顶层推进边（排除 `kind: "feedback"` 的边）的最长认知阶梯并校验：
 
      | 情形 | 结果 |
      | --- | --- |
-     | 最长链 < `depth` | 报错：因果链没有连到底 |
-     | 最长链 > 8 跳 | 警告：一次跟不完，考虑收进 `detailGraph` |
-     | 顶层边成环 | 报错：因果链必须是 DAG |
-     | 顶层节点 > 20 | 警告：宽度不提升难度，只会稀释视线 |
+     | 最长推进链 < `depth` | 报错：主干推进未达到目标深度 |
+     | 最长推进链 > 8 阶 | 警告：一次很难消化完，考虑收进 `detailGraph` |
+     | 顶层推进边成环 | 报错：主干推进必须是 DAG（反馈回流请标 `"kind": "feedback"`） |
+     | 顶层节点 > 20 | 警告：宽度不提升深度，只会稀释视线 |
 
-   - 画布在页头显示「因果链深度：N 跳」与读者档位；`depth <= 2` 时收起搜索与小地图，只有一条脉络时不显示脉络过滤器，图例只列出实际用到的角色。
+   - 画布在页头显示「知识深度：N 阶」与读者档位；`depth <= 2` 时彻底收起搜索框、小地图按钮与缩览图，只有一条脉络时不显示脉络过滤器，图例只列出实际用到的角色（若含反馈边则附带反馈回路图例）。
    - 除 `id`、`title`、`role`、`streamIds` 外，节点的说明性字段（`whyItMatters`、`keyFactors`、`mechanismsAndEffects`、`watchouts`、`anchors`、`detailGraph`、`deepDive`）都是可选的，只在确有内容时填写；整张图至少要有一个节点或脉络带 `deepDive`。
 2. **`meta.language` 与 `meta.uiLabels`**：
    - 内置词典会自动为 `zh*` 与 `en*` 本地化 UI。
-   - 当 `meta.language` 是其他语言（如 `ja`、`ko`、`es`、`fr`、`de`）时，在 `meta.uiLabels` 中为以下键填入本地化字符串（`skipToCanvas`、`modelPrefix`、`backParent`、`levelOverview`、`levelSubPrefix`、`allStreams`、`searchLabel`、`searchPlaceholder`、`zoomIn`、`zoomOut`、`lock`、`unlock`、`fitView`、`reset`、`legend`、`exportPng`、`scopeNotes`、`learningPath`、`expandDetail`、`collapseDetail`、`detailEdgeLabel`、`deepDiveBadgeTitle`、`deepDiveModalTitle`、`tabAsk`、`tabRecursive`、`copyBtn`、`copiedBtn`、`copySnippet`、`openInEditor`、`editorConfirmHint`、`recursiveUsageHint`、`whatItDoes`、`whyItMatters`、`inputsLabel`、`outputsLabel`、`mechanismsLabel`、`watchoutsLabel`、`anchorsLabel`、`openDeepDiveBtn`、`unverifiedTag`、`verifiedTag`、`uncoveredTitle`、`unverifiedTitle`、`noSearchMatches`、`nestedBadge`、`depthPrefix`、`hopsUnit`、`audiencePrefix`、`close`，以及 `roles` 一个对象）。
+   - 当 `meta.language` 是其他语言（如 `ja`、`ko`、`es`、`fr`、`de`）时，在 `meta.uiLabels` 中为以下键填入本地化字符串：
+     - 顶栏与导航：`skipToCanvas`、`modelPrefix`、`backParent`、`levelOverview`、`levelSubPrefix`、`depthPrefix`、`depthUnit`（兼容旧键 `hopsUnit`）、`audiencePrefix`、`scopeNotes`、`uncoveredTitle`、`unverifiedTitle`、`close`
+     - 工具栏与画布：`allStreams`、`searchLabel`、`searchPlaceholder`、`noSearchMatches`、`zoomIn`、`zoomOut`、`lock`、`unlock`、`fitView`、`fullscreen`、`exitFullscreen`、`reset`、`legend`、`feedbackEdge`、`miniMap`、`exportPng`、`exportZip`、`exportZipFailed`、`exportZipFileProtocolHint`、`learningPath`
+     - 节点、抽屉与钻取：`expandDetail`、`collapseDetail`、`detailEdgeLabel`、`nestedBadge`、`deepDiveBadgeTitle`、`deepDiveModalTitle`、`tabAsk`、`tabRecursive`、`tabChildAtlas`、`openChildAtlas`、`copyBtn`、`copiedBtn`、`copySnippet`、`openInEditor`、`editorConfirmHint`、`recursiveUsageHint`、`whatItDoes`、`whyItMatters`、`inputsLabel`、`outputsLabel`、`kvColon`、`mechanismsLabel`、`watchoutsLabel`、`anchorsLabel`、`openDeepDiveBtn`、`unverifiedTag`、`verifiedTag`
+     - 角色字典：`roles`（包含 `entry`、`core`、`branch`、`foundation`、`context`、`extension`、`outcome` 7 个键的对象）
 3. **7 种通用认知角色（`node.role`）**：
    - `entry`：起点、用户动作、核心问题或触发因素。
    - `core`：主要机制、处理步骤或主论证。
-   - `branch`：决策点、权衡、分岔或分类边界。
+   - `branch`：决策点、权衡、分岔或临界拐点。
    - `foundation`：底层原理、思维模型、公理、数据存储或配置基础。
    - `context`：外部系统、历史/环境背景或生态依赖。
    - `extension`：异步影响、进阶变体、下游后果或推论。
-   - `outcome`：最终结果、要点或目标状态。
+   - `outcome`：最终结果、高阶洞察或目标状态。
 4. **多态 `anchors`（可选——选用适合主题的类型）**：
    - 公式 / CLI 命令 / 思维清单 / 引文 / 代码（`snippet`）：
      `{ "kind": "snippet", "label": "关键公式 / 命令", "content": "…", "language": "python" }`
@@ -139,6 +144,9 @@
    - 本地文件跳转（`editor`——**仅当磁盘上存在已验证的本地文件时使用**）：
      `{ "kind": "editor", "label": "入口处理函数", "filePath": "src/app.ts", "absPath": "/abs/path/src/app.ts", "line": 42, "symbol": "runApp", "editor": "vscode" }`
      （`build_atlas.mjs` 会核验 `absPath` 与 `line` 在磁盘上确实存在，并自动计算编码后的 `vscode://file/…` 或 `zed://file/…` URI。）
-5. **边标签**：
-   - 每条顶层边，以及 `detailGraph` 中的边，都必须带有非空的 `label`，说明因果、顺序或分支条件。
-   - 标签显示在两张节点卡片之间的空隙中央，查看器不会截断。长度由编写者判断：写长了会被节点盖住，所以用能放进空隙的短词或短句，不设固定字数。
+5. **边字段与标签（`edges` 与 `detailGraph.edges`）**：
+   - 每条顶层边以及 `detailGraph` 中的边都必须带有非空的 `label`，说明推进关系、反馈机制或分支条件。
+   - 可选 `kind` 字段：
+     - `"progression"`（默认）：主干认知推进边，参与 Dagre 拓扑排布与 `meta.depth` 最长阶数校验。
+     - `"feedback"`：系统中的反馈回路、迭代回流或负反馈稳态边；不参与 DAG 校验与阶数计算，渲染为琥珀色虚线折线。
+   - 标签显示在两张节点卡片之间的空隙中央，查看器不会截断。长度由编写者判断：写过长会与卡片重叠，尽量精炼在十来字以内。

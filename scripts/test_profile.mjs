@@ -14,6 +14,9 @@ import {
   nearestOption,
   resolveEstimate,
   recordScore,
+  catalogAtlas,
+  findSimilarKeys,
+  renderDashboardHtml,
   loadProfile,
   saveProfile,
 } from './profile.mjs';
@@ -26,10 +29,10 @@ function fresh() {
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
 
-test('深度与评分互为反函数，且夹在 2–6 跳', () => {
+test('深度与评分互为反函数，且夹在 2–6 阶', () => {
   for (const s of SCORE_OPTIONS) {
     const d = scoreToDepth(s);
-    assert.ok(d >= MIN_DEPTH && d <= MAX_DEPTH, `${s} 分 → ${d} 跳越界`);
+    assert.ok(d >= MIN_DEPTH && d <= MAX_DEPTH, `${s} 分 → ${d} 阶越界`);
     assert.equal(d, s / 2 + 1);
   }
   assert.equal(scoreToDepth(0), MIN_DEPTH);
@@ -67,13 +70,13 @@ test('恰好测到上限不算顶格：这张图对学习者偏难', () => {
   assert.equal(est.recommendedDepth, 3, '恰好测到上限应保持原深度');
 });
 
-test('超过上限才算顶格，且只加深一跳', () => {
+test('超过上限才算顶格，且只加深一阶', () => {
   const { profile } = fresh();
   const { censored } = recordScore(profile, { key: '餐饮/厨师/粤菜', score: 6, depth: 3 });
   assert.equal(censored, true);
   const est = resolveEstimate(profile, '餐饮/厨师/粤菜');
   assert.equal(est.estimate, 6);
-  assert.equal(est.recommendedDepth, 4, '6 分反解就是 4 跳，不能叠加成 5');
+  assert.equal(est.recommendedDepth, 4, '6 分反解就是 4 阶，不能叠加成 5');
   assert.equal(est.censored, true);
 });
 
@@ -136,7 +139,7 @@ test('回写：上级领域获得折半权重的观测并标注来源', () => {
   assert.equal(domain.weight, 0.25);
 });
 
-test('空档案给出 3 跳起步', () => {
+test('空档案给出 3 阶起步', () => {
   const { profile } = fresh();
   const est = resolveEstimate(profile, '从未记录');
   assert.equal(est.estimate, null);
@@ -167,6 +170,93 @@ test('保存是原子写：不留临时文件', () => {
   const leftovers = fs.readdirSync(dir).filter((f) => f.includes('.tmp-'));
   assert.deepEqual(leftovers, []);
   assert.equal(loadProfile(file).entries['餐饮'].observations.length, 1);
+});
+
+test('v1 档案自动无损兼容升级为 v2，保留全部历史观测', () => {
+  const { file } = fresh();
+  const v1 = {
+    version: 1,
+    entries: {
+      '编程': {
+        observations: [{ at: '2026-01-01T00:00:00Z', score: 6, depth: 3, model: 'opus', weight: 1 }],
+      },
+    },
+  };
+  fs.writeFileSync(file, JSON.stringify(v1), 'utf8');
+  const loaded = loadProfile(file);
+  assert.equal(loaded.version, 2);
+  assert.deepEqual(loaded.atlases, []);
+  assert.equal(loaded.entries['编程'].observations.length, 1);
+  assert.equal(resolveEstimate(loaded, '编程').recommendedDepth, 4);
+});
+
+test('catalogAtlas 归档地图、提取核心概念与待探索线索，并支持按路径去重', () => {
+  const { dir, profile } = fresh();
+  const sample = JSON.parse(fs.readFileSync(path.resolve('template/sample-data.json'), 'utf8'));
+  const fakeHtml = path.join(dir, 'espresso.html');
+  fs.writeFileSync(fakeHtml, '<html></html>', 'utf8');
+
+  const first = catalogAtlas(profile, { domain: '餐饮/咖啡/意式浓缩', htmlPath: fakeHtml, data: sample });
+  assert.equal(first.title, sample.meta.title);
+  assert.equal(first.concepts.length, sample.nodes.length);
+  assert.ok(first.unexploredTargets.includes('布粉均质化与低压预浸泡'));
+  assert.ok(!first.unexploredTargets.includes('双峰粒径分布（主粒径与极细粉）')); // 已有 childAtlasUrl
+  assert.equal(first.unverifiedCount, 1);
+
+  recordScore(profile, {
+    key: '餐饮/咖啡/意式浓缩',
+    score: 6,
+    depth: 3,
+    model: 'test-model',
+    htmlPath: fakeHtml,
+  });
+  assert.equal(profile.atlases[0].lastScore, 6);
+
+  // 同一路径再次归档应去重更新且保留 lastScore
+  const second = catalogAtlas(profile, { domain: '餐饮/咖啡/意式浓缩', htmlPath: fakeHtml, data: sample });
+  assert.equal(profile.atlases.length, 1);
+  assert.equal(second.lastScore, 6);
+});
+
+test('resolveEstimate 返回关联地图、已知概念，未命中时返回已有领域防碎片化', () => {
+  const { dir, profile } = fresh();
+  const sample = JSON.parse(fs.readFileSync(path.resolve('template/sample-data.json'), 'utf8'));
+  const fakeHtml = path.join(dir, 'espresso.html');
+  fs.writeFileSync(fakeHtml, '<html></html>', 'utf8');
+  catalogAtlas(profile, { domain: '餐饮/咖啡/意式浓缩', htmlPath: fakeHtml, data: sample });
+  recordScore(profile, { key: '餐饮/咖啡/意式浓缩', score: 6, depth: 3, model: 'm1' });
+
+  const related = resolveEstimate(profile, '餐饮/咖啡/手冲', { model: 'm1' });
+  assert.equal(related.matchedKey, '餐饮/咖啡');
+  assert.equal(related.relatedAtlases.length, 1);
+  assert.ok(related.knownConcepts.includes('双峰粒径分布（主粒径与极细粉）'));
+
+  const unrelated = resolveEstimate(profile, '软件开发/AI/SKILL', { model: 'm1' });
+  assert.equal(unrelated.matchedKey, null);
+  assert.ok(unrelated.similarKeys.includes('餐饮/咖啡/意式浓缩'));
+  assert.ok(findSimilarKeys(profile, '餐饮/手冲')[0].startsWith('餐饮'));
+});
+
+test('renderDashboardHtml 生成无外链单文件并对 XSS 载荷安全转义', () => {
+  const { dir, profile } = fresh();
+  const xssTitle = '测试</script><script>window.__pwned=1</script>';
+  recordScore(profile, { key: '软件开发/AI', score: 6, depth: 3, model: 'test-model' });
+  catalogAtlas(profile, {
+    domain: '软件开发/AI',
+    htmlPath: path.join(dir, 'xss.html'),
+    data: {
+      meta: { title: xssTitle, level: 0, depth: 3, generatedByModel: 'test-model' },
+      streams: [{ id: 's1', title: 'S1' }],
+      nodes: [{ id: 'n1', title: '概念A</script>', streamIds: ['s1'], role: 'entry', deepDive: { subAtlasPrompt: 'explore more' } }],
+      edges: [],
+    },
+  });
+
+  const html = renderDashboardHtml(profile, { profileFile: path.join(dir, 'profile.json') });
+  assert.ok(html.includes('Atlas Loop · 个人成长总览'));
+  assert.ok(!/https?:\/\/(?!www\.w3\.org\/2000\/svg)/.test(html));
+  assert.ok(!html.includes('</script><script>window.__pwned'));
+  assert.ok(html.includes('\\u003c/script>'));
 });
 
 let failed = 0;

@@ -8,7 +8,7 @@
     "generatedByModel": "Atlas Loop Preview",
     "level": 0,
     "depth": 2,
-    "depthReason": "从选定任务到长休息只用两步因果就够：启动定时器 → 铃响即停；累计轮数由定时器自己记，读者不需要图中替它数",
+    "depthReason": "从选定任务到长休息只需两阶推进：启动定时器 → 铃响即停；累计满四轮形成习惯闭环",
     "audience": "尚未建立时间盒习惯的人",
     "drillDownTarget": null,
     "parentMapHtml": null,
@@ -104,7 +104,14 @@
       "id": "e3",
       "source": "n-break",
       "target": "n-long-break",
-      "label": "累计满四轮（未满则回到专注）"
+      "label": "累计满四轮"
+    },
+    {
+      "id": "e-feedback",
+      "source": "n-break",
+      "target": "n-focus",
+      "label": "未满四轮回到专注",
+      "kind": "feedback"
     }
   ]
 }

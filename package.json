@@ -19,7 +19,8 @@
   "scripts": {
     "dev": "node template/dev-server.mjs",
     "build:shell": "node template/build-shell.mjs",
-    "test": "node scripts/test_profile.mjs",
+    "test": "node scripts/test_profile.mjs && node scripts/test_pipeline.mjs",
+    "verify:samples": "node scripts/verify_samples.mjs",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
   },

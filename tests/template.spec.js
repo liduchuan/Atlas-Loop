@@ -35,27 +35,28 @@ test.describe('页面基础加载', () => {
 });
 
 // ──────────────────────────────────────────────────────────────
-// 2. 节点卡片：展开/收起
+// 2. 节点卡片：展开/收起细节子图
 // ──────────────────────────────────────────────────────────────
 test.describe('节点卡片展开/收起', () => {
-  test('点击展开按钮后节点卡片变高', async ({ page }) => {
+  test('点击展开按钮后新增细节子节点并可收起恢复', async ({ page }) => {
     await page.goto('/');
     await waitForCanvas(page);
 
-    // 找第一个展开按钮（.atlas-expand-btn）
-    const expandBtn = page.locator('.atlas-expand-btn').first();
+    const expandBtn = page.locator('[data-testid="node-expand-btn"]').first();
     await expect(expandBtn).toBeVisible();
 
-    // 记录点击前高度
-    const nodeBefore = page.locator('.atlas-node').first();
-    const heightBefore = await nodeBefore.evaluate((el) => el.getBoundingClientRect().height);
-
+    const countBefore = await page.locator('.react-flow__node').count();
     await expandBtn.click();
 
-    // 等待 DOM 更新
-    await page.waitForTimeout(300);
-    const heightAfter = await nodeBefore.evaluate((el) => el.getBoundingClientRect().height);
-    expect(heightAfter).toBeGreaterThan(heightBefore);
+    await expect(expandBtn).toHaveAttribute('aria-expanded', 'true');
+    const subNodes = page.locator('[data-testid="atlas-subnode-card"]');
+    await expect(subNodes.first()).toBeVisible();
+    const countAfter = await page.locator('.react-flow__node').count();
+    expect(countAfter).toBeGreaterThan(countBefore);
+
+    await expandBtn.click();
+    await expect(expandBtn).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('.react-flow__node')).toHaveCount(countBefore);
   });
 });
 
@@ -306,16 +307,29 @@ test.describe('锁定/解锁画布', () => {
     await page.goto('/');
     await waitForCanvas(page);
 
-    // 锁定状态：节点上应有 .nodrag 或节点容器的 draggable=false
+    const lockBtn = page.locator('[data-testid="btn-lock"]');
+    await expect(lockBtn).toHaveAttribute('data-locked', 'true');
+
     const node = page.locator('.react-flow__node').first();
-    const isDraggableBefore = await node.evaluate((el) =>
-      !el.classList.contains('nodrag') && el.getAttribute('draggable') !== 'false'
-    );
-    // 默认锁定 → 节点不应该可拖
-    // 注意：ReactFlow 通过 nodesDraggable prop 控制，不一定加 class
-    // 只检查解锁按钮存在
-    const lockBtn = page.locator('[data-testid="btn-lock"], .atlas-ctrl-btn[aria-label*="锁"], .atlas-ctrl-btn[title*="Lock"]').first();
-    await expect(lockBtn).toBeVisible();
+    const getTransform = () => node.evaluate((el) => el.style.transform);
+    const beforeLocked = await getTransform();
+
+    const lockedBox = await node.boundingBox();
+    await page.mouse.move(lockedBox.x + 40, lockedBox.y + 24);
+    await page.mouse.down();
+    await page.mouse.move(lockedBox.x + 150, lockedBox.y + 110, { steps: 6 });
+    await page.mouse.up();
+    expect(await getTransform()).toBe(beforeLocked);
+
+    await lockBtn.click();
+    await expect(lockBtn).toHaveAttribute('data-locked', 'false');
+
+    const unlockedBox = await node.boundingBox();
+    await page.mouse.move(unlockedBox.x + 40, unlockedBox.y + 24);
+    await page.mouse.down();
+    await page.mouse.move(unlockedBox.x + 150, unlockedBox.y + 110, { steps: 8 });
+    await page.mouse.up();
+    expect(await getTransform()).not.toBe(beforeLocked);
   });
 });
 
@@ -552,7 +566,7 @@ test.describe('片段代码高亮', () => {
 
   test('单文件地图只内联用到的语言，启动脚本不含语法包', async ({ page }) => {
     const { execFileSync } = await import('node:child_process');
-    const { readFileSync } = await import('node:fs');
+    const { readFileSync, rmSync } = await import('node:fs');
     const http = await import('node:http');
     execFileSync('node', [
       'scripts/build_atlas.mjs',
@@ -595,7 +609,105 @@ test.describe('片段代码高亮', () => {
       expect(requests.filter((pathname) => pathname.startsWith('/__hljs/'))).toEqual([]);
     } finally {
       await new Promise((resolve) => server.close(resolve));
+      rmSync('/tmp/atlas-hl-test.html', { force: true });
     }
   });
 });
+
+// ──────────────────────────────────────────────────────────────
+// 13. 浅图紧凑模式与反馈回路边
+// ──────────────────────────────────────────────────────────────
+test.describe('浅图紧凑模式与反馈回路边', () => {
+  test('depth <= 2 彻底隐藏搜索与小地图，并渲染 feedback 边与图例', async ({ page }) => {
+    await page.goto('/?data=sample-data-simple.json');
+    await waitForCanvas(page);
+
+    await expect(page.locator('[data-testid="depth-badge"]')).toContainText('2 阶');
+    await expect(page.locator('[data-testid="search-input"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="btn-minimap"]')).toHaveCount(0);
+    await expect(page.locator('.react-flow__minimap')).toHaveCount(0);
+    await expect(page.locator('.atlas-edge-feedback')).toHaveCount(1);
+
+    await page.locator('[data-testid="btn-legend"]').click();
+    await expect(page.locator('[data-testid="legend-feedback-row"]')).toBeVisible();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────
+// 14. ZIP 导出保留 hljs 资产与 file:// 非阻塞提示
+// ──────────────────────────────────────────────────────────────
+test.describe('ZIP 导出高亮与离线提示', () => {
+  test('从含代码片段的地图导出 ZIP 时保留内联 hljs 资源', async ({ page }) => {
+    await page.goto('/?data=sample-data-highlight.json');
+    await waitForCanvas(page);
+
+    const [download] = await Promise.all([
+      page.waitForEvent('download', { timeout: 20_000 }),
+      page.locator('[data-testid="btn-export-zip"]').click(),
+    ]);
+    const zipPath = await download.path();
+    const { readFileSync, mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { pathToFileURL } = await import('node:url');
+
+    const buf = readFileSync(zipPath);
+    const fnLen = buf.readUInt16LE(26);
+    const extraLen = buf.readUInt16LE(28);
+    const size = buf.readUInt32LE(18);
+    const dataOffset = 30 + fnLen + extraLen;
+    const html = buf.subarray(dataOffset, dataOffset + size).toString('utf8');
+
+    expect(html).toContain('id="atlas-hljs-manifest"');
+    expect(html).toContain('id="atlas-hljs-core"');
+    expect(html).toContain('id="atlas-hljs-lang-python"');
+
+    const dir = mkdtempSync(join(tmpdir(), 'atlas-zip-hl-'));
+    try {
+      const filePath = join(dir, 'highlight.html');
+      writeFileSync(filePath, html, 'utf8');
+      await page.goto(pathToFileURL(filePath).href);
+      await waitForCanvas(page);
+      await page.locator('[data-node-id="n-code"]').click();
+      await expect(page.locator('[data-snippet-label="萃取比"] pre')).toHaveAttribute('data-highlighted', 'true');
+      await expect(page.locator('[data-snippet-label="萃取比"] .hljs-keyword').first()).toBeVisible();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('file:// 下导出含子图链接的地图时展示非阻塞提示而非中断', async ({ page }) => {
+    const { execFileSync } = await import('node:child_process');
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { pathToFileURL } = await import('node:url');
+
+    const dir = mkdtempSync(join(tmpdir(), 'atlas-file-zip-toast-'));
+    try {
+      const outHtml = join(dir, 'sample.html');
+      execFileSync('node', [
+        'scripts/build_atlas.mjs',
+        '--data',
+        'template/sample-data.json',
+        '--out',
+        outHtml,
+      ], { cwd: process.cwd() });
+
+      await page.goto(pathToFileURL(outHtml).href);
+      await waitForCanvas(page);
+
+      const [download] = await Promise.all([
+        page.waitForEvent('download', { timeout: 15_000 }),
+        page.locator('[data-testid="btn-export-zip"]').click(),
+      ]);
+      expect(download.suggestedFilename().endsWith('.zip')).toBe(true);
+      await expect(page.locator('[data-testid="atlas-toast"]')).toBeVisible();
+      await expect(page.locator('[data-testid="atlas-toast"]')).toContainText('atlas-loop pack');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 

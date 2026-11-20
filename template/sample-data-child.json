@@ -2,13 +2,13 @@
   "schemaVersion": "2.0",
   "meta": {
     "title": "平刀与锥刀粉碎几何学与粒径控制",
-    "subtitle": "从刀盘几何到双峰粒径分布与风味表现的因果链",
+    "subtitle": "从刀盘几何、双峰粒径分布到萃取动力学与风味表现的认知阶梯",
     "subjectTag": "食品物理 / 冲煮技艺",
     "language": "zh-CN",
     "generatedByModel": "Atlas Loop Preview (child demo)",
     "level": 1,
     "depth": 3,
-    "depthReason": "刀盘几何 → 破碎路径 → 粒径分布 → 风味表现，三步主干可达，无需补中间环节",
+    "depthReason": "刀盘几何 → 双峰分布 → 渗流溶出耦合 → 风味表现，三阶主干递进清晰，读者无需额外补全前置",
     "audience": "已会用半自动咖啡机、想弄明白为什么好喝或难喝的人",
     "drillDownTarget": "平刀与锥刀粉碎几何学与粒径控制",
     "parentMapHtml": "/",
@@ -22,8 +22,8 @@
     {
       "id": "stream-geometry",
       "title": "刀盘几何与破碎路径",
-      "summary": "平刀多次切削 vs 锥刀挤压破碎的机制差异及其对粒径分布的影响",
-      "learningOrder": ["n-flat-geometry", "n-conical-geometry", "n-bimodal", "n-flavor"]
+      "summary": "平刀多次切削 vs 锥刀挤压破碎的机制差异及其对粒径分布与萃取的影响",
+      "learningOrder": ["n-flat-geometry", "n-conical-geometry", "n-bimodal", "n-extraction-dynamics", "n-flavor"]
     }
   ],
   "nodes": [
@@ -82,7 +82,7 @@
     {
       "id": "n-bimodal",
       "streamIds": ["stream-geometry"],
-      "role": "mechanism",
+      "role": "core",
       "title": "双峰分布：主粒径峰 + 细粉峰",
       "summary": "意式研磨的粒径分布普遍呈双峰：粗颗粒决定渗流阻力，细粉填充孔隙并放大萃取率",
       "whyItMatters": "细粉比例是调节萃取率与口感厚度的隐性旋钮，调研磨刻度时细粉的变化往往比主峰位移更显著",
@@ -94,6 +94,16 @@
           "content": "细粉（< 100 μm）：填充粗颗粒间孔隙 → 提升粉床渗流阻力 + 比表面积激增 → 加速溶出"
         }
       ]
+    },
+    {
+      "id": "n-extraction-dynamics",
+      "streamIds": ["stream-geometry"],
+      "role": "foundation",
+      "title": "渗流阻力与溶出速率耦合",
+      "summary": "细粉占比改变粉床有效孔隙率与水力阻力，主峰宽度决定颗粒间的局部同步溶出率",
+      "whyItMatters": "连接物理粒径分布与感官风味的核心物理桥梁：同一平均粒径下，分布形态不同会导致完全不同的流阻与过萃风险",
+      "confidence": "verified",
+      "anchors": []
     },
     {
       "id": "n-flavor",
@@ -128,8 +138,14 @@
     {
       "id": "e3",
       "source": "n-bimodal",
+      "target": "n-extraction-dynamics",
+      "label": "设定孔隙结构与比表面积"
+    },
+    {
+      "id": "e4",
+      "source": "n-extraction-dynamics",
       "target": "n-flavor",
-      "label": "细粉比例决定厚重感"
+      "label": "同步萃取度与细粉比例定风味"
     }
   ]
 }

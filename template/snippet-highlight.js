@@ -1,5 +1,5 @@
 // 按需加载 highlight.js。首屏包不包含任何语法；打开代码片段时才取核心和对应语言。
-import { resolveSnippetPlan } from './snippet-lang.js';
+import { resolveSnippetPlan } from './snippet-lang.mjs';
 
 const moduleLoads = new Map();
 const languageLoads = new Map();

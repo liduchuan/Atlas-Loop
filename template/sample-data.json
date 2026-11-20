@@ -2,13 +2,13 @@
   "schemaVersion": "2.0",
   "meta": {
     "title": "意式浓缩萃取物理机制（Espresso Extraction）",
-    "subtitle": "从研磨粒径分布、渗流阻力到金杯风味平衡的因果体系",
+    "subtitle": "从研磨粒径分布、渗流阻力到金杯风味平衡的知识体系",
     "subjectTag": "食品物理 / 冲煮技艺",
     "language": "zh-CN",
     "generatedByModel": "Atlas Loop Preview",
     "level": 0,
     "depth": 3,
-    "depthReason": "研磨 → 填压 → 通道效应 → 风味平衡三步可达；渗流与溶出的相互作用仍是同一条链上的分叉，学习者不需要补中间环节就能跟完",
+    "depthReason": "研磨 → 填压 → 通道效应 → 风味平衡三阶可达；渗流与溶出的相互作用仍是同一脉络上的分叉，学习者无需补全中间跨越就能跟完",
     "audience": "已会用半自动咖啡机、想弄明白为什么好喝或难喝的人",
     "drillDownTarget": null,
     "parentMapHtml": null,
@@ -211,7 +211,7 @@
       "role": "outcome",
       "title": "金杯感官平衡（18%–22% EY · 8%–12% TDS）",
       "summary": "均匀渗流叠加恰当截断比，实现酸甜苦协调与绵密油脂触感",
-      "whyItMatters": "将经验主义调磨转化为可量化、可复现的因果调参闭环",
+      "whyItMatters": "将经验主义调磨转化为可量化、可复现的系统调参闭环",
       "keyFactors": {
         "inputs": "稳定的无通道渗流 + 匹配烘焙度的粉液比（常见 1:1.8–1:2.5）",
         "outputs": "风味干净、甜感饱满、余韵持久的出品"
