@@ -10,6 +10,7 @@ import { buildAtlasHtml, validateAndEnrich } from './build_atlas.mjs';
 import { extractAtlasDataFromHtml, linkChildAtlas } from './link_child.mjs';
 import { packAtlasZip } from './pack_atlas.mjs';
 import { catalogAtlas } from './profile.mjs';
+import { resolveSnippetPlan } from '../template/snippet-lang.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -199,6 +200,83 @@ test('install 安装后的 skill 在无自动模块检测（Node 18/20.0–20.18
     assert.ok(fs.existsSync(outHtml));
     const parsed = extractAtlasDataFromHtml(fs.readFileSync(outHtml, 'utf8'));
     assert.equal(parsed.meta.depth, 2);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('snippet-lang 正确识别 Python/TS/C/Bash 且公式与清单保持纯文本，并支持 vue/toml/zsh 等别名内联', () => {
+  const codeCases = [
+    ['def foo(x):\n    return x + 1', undefined, 'python'],
+    ['for i in range(10):\n    print(i)', undefined, 'python'],
+    ['function greet(name: string) { return name; }', undefined, 'typescript'],
+    ['export const x: string = "hi";', undefined, 'typescript'],
+    ['#include <stdio.h>\nint main() { return 0; }', undefined, 'c'],
+    ['docker run -p 8080:80 nginx', undefined, 'bash'],
+    ['kubectl get pods -n default', undefined, 'bash'],
+    ['ls -la /tmp', undefined, 'bash'],
+    ['export NODE_ENV=production', undefined, 'bash'],
+  ];
+  for (const [content, hint, expectLang] of codeCases) {
+    const plan = resolveSnippetPlan(content, hint);
+    assert.equal(plan.mode, 'language', `期望识别为代码：${content}`);
+    assert.equal(plan.language, expectLang, `语言识别偏差：${content}`);
+  }
+
+  const plainCases = [
+    'Q = (k · A · ΔP) / (μ · L)   // 渗透率 k 对粒径平方高度敏感',
+    'EY(%) = (液重 Beverage Mass × 浓度 TDS%) / 干粉重 Dose Mass',
+    '25 分钟专注 → 5 分钟休息 ×4 → 15–30 分钟长休息',
+    '先写单测，再重构公共模块，最后做端到端回归。',
+  ];
+  for (const content of plainCases) {
+    assert.equal(resolveSnippetPlan(content, undefined).mode, 'plain', `公式或清单不应被误判为代码：${content}`);
+  }
+
+  const tmp = makeTempDir('atlas-pipe-aliases-');
+  try {
+    const data = {
+      schemaVersion: '2.0',
+      meta: {
+        title: '别名内联测试',
+        language: 'zh-CN',
+        generatedByModel: 'test',
+        level: 0,
+        depth: 2,
+        depthReason: '测试别名映射',
+      },
+      streams: [{ id: 's1', title: 'S1' }],
+      nodes: [
+        {
+          id: 'n1',
+          streamIds: ['s1'],
+          role: 'entry',
+          title: 'N1',
+          anchors: [
+            { kind: 'snippet', label: 'Vue', language: 'vue', content: '<template><div>{{ msg }}</div></template>' },
+            { kind: 'snippet', label: 'Svelte', language: 'svelte', content: '<script>let count = 0;</script><button>{count}</button>' },
+            { kind: 'snippet', label: 'TOML', language: 'toml', content: '[package]\nname = "atlas-loop"' },
+            { kind: 'snippet', label: 'Zsh', language: 'zsh', content: 'echo $SHELL' },
+            { kind: 'snippet', label: 'MJS', language: 'mjs', content: 'export const ok = true;' },
+          ],
+          deepDive: { askPrompts: [{ title: '深入问题', prompt: '请对比不同模块后缀与框架模板的高亮资源内联方式。' }] },
+        },
+        { id: 'n2', streamIds: ['s1'], role: 'core', title: 'N2' },
+        { id: 'n3', streamIds: ['s1'], role: 'outcome', title: 'N3' },
+      ],
+      edges: [
+        { id: 'e1', source: 'n1', target: 'n2', label: '推进1' },
+        { id: 'e2', source: 'n2', target: 'n3', label: '推进2' },
+      ],
+    };
+    const out = path.join(tmp, 'aliases.html');
+    const res = buildAtlasHtml({ data, outPath: out, write: true });
+    assert.deepEqual(res.warnings, []);
+    const html = fs.readFileSync(out, 'utf8');
+    assert.ok(html.includes('id="atlas-hljs-lang-xml"'));
+    assert.ok(html.includes('id="atlas-hljs-lang-ini"'));
+    assert.ok(html.includes('id="atlas-hljs-lang-bash"'));
+    assert.ok(html.includes('id="atlas-hljs-lang-javascript"'));
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

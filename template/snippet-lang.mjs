@@ -41,7 +41,7 @@ const LANGUAGE_GUESSES = [
   ]],
   ['scala', [
     [/^\s*object\s+\w+\s*(extends|\{)/m, 2],
-    [/\bdef\s+\w+[^(]*\([^)]*\)\s*:/, 2],
+    [/\bdef\s+\w+[^(]*\([^)]*\)\s*:\s*[A-Za-z0-9_.\[\]]+\s*=/, 2],
   ]],
   ['haskell', [
     [/^\s*module\s+[A-Z]\w*/m, 2],
@@ -60,6 +60,8 @@ const LANGUAGE_GUESSES = [
     [/^\s*elif\s+/, 2],
     [/^\s*from\s+\S+\s+import\s+/m, 2],
     [/__name__\s*==\s*['"]__main__['"]/, 2],
+    [/^\s*for\s+\w+\s+in\s+.+:\s*$/m, 2],
+    [/^\s*class\s+\w+\s*(\([^)]*\))?\s*:/m, 2],
   ]],
   ['ruby', [
     [/^\s*class\s+[A-Z]\w*\s*<\s*[A-Z]/m, 2],
@@ -79,10 +81,13 @@ const LANGUAGE_GUESSES = [
   ['cpp', [
     [/\bstd::\w+/, 2],
     [/\btemplate\s*</, 2],
+    [/^\s*#include\s*<(iostream|vector|string|map|unordered_map|memory|algorithm|thread|optional)>/m, 2],
     [/#include\s*<[\w.]+>/, 1],
   ]],
   ['c', [
     [/\bprintf\s*\(/, 2],
+    [/^\s*#include\s*<[\w./]+\.h>/m, 2],
+    [/\bint\s+main\s*\(/, 2],
     [/#include\s*<[\w./]+>/, 1],
   ]],
   ['sql', [
@@ -118,7 +123,10 @@ const LANGUAGE_GUESSES = [
   ]],
   ['bash', [
     [/^#!.*\b(bash|sh|zsh)\b/m, 2],
-    [/^\s*(echo|export|sudo|cd|npm|pnpm|yarn|bun|git|curl)\s+\S+/m, 2],
+    [/^\s*(echo|sudo|cd|npm|pnpm|yarn|bun|git|curl|npx|node|python3?|pip3?|uv|cargo|rustc|docker|kubectl|helm|terraform|wget|brew|apt-get|apt|chmod|chown|mkdir|grep|awk|sed|ssh|scp|tar|systemctl)\s+\S+/m, 2],
+    [/^\s*export\s+(?!(?:const|let|var|function|class|type|interface|enum|default|async|\{)\b)[A-Za-z_]\w*(?:=|\s*$)/m, 2],
+    [/^\s*go\s+(run|build|test|mod|get|install)\b/m, 2],
+    [/^\s*ls\s+-\S*/m, 2],
   ]],
   ['typescript', [
     [/:\s*(string|number|boolean|any|void|never)\b/, 2],
@@ -129,6 +137,9 @@ const LANGUAGE_GUESSES = [
     [/^\s*(import|export)\s+/m, 2],
     [/\bfunction\s+\w+\s*\(/, 2],
     [/^\s*(const|let|var)\s+\w+\s*=/m, 2],
+    [/\bclass\s+[A-Z]\w*\s*\{[\s\S]*?\bconstructor\s*\(/, 2],
+    [/\basync\s+function\b/, 2],
+    [/\bawait\s+\w+/, 1],
     [/=>\s*[{(]/, 1],
   ]],
   ['lua', [
@@ -170,27 +181,43 @@ export function extractFence(content) {
   return { language: normalizeLanguageHint(match[1]), code: match[2] };
 }
 
+const SUPERSET_PAIRS = [
+  ['typescript', 'javascript'],
+  ['cpp', 'c'],
+  ['scss', 'css'],
+  ['html', 'xml'],
+];
+
 export function guessLanguage(content) {
   const text = String(content || '');
   if (!text.trim()) return null;
-  let best = null;
-  let bestScore = 0;
-  let tie = false;
+  const scores = new Map();
   for (const [language, patterns] of LANGUAGE_GUESSES) {
     let score = 0;
     for (const [pattern, weight] of patterns) {
       if (pattern.test(text)) score += weight;
     }
-    if (score > bestScore) {
-      best = language;
-      bestScore = score;
-      tie = false;
-    } else if (score === bestScore && score > 0) {
-      tie = true;
+    if (score > 0) scores.set(language, score);
+  }
+  if (scores.size === 0) return null;
+
+  let bestScore = 0;
+  for (const score of scores.values()) {
+    if (score > bestScore) bestScore = score;
+  }
+  if (bestScore < 2) return null;
+
+  const tied = [];
+  for (const [language] of LANGUAGE_GUESSES) {
+    if (scores.get(language) === bestScore) tied.push(language);
+  }
+  const tiedSet = new Set(tied);
+  for (const [superset, subset] of SUPERSET_PAIRS) {
+    if (tiedSet.has(subset) && (scores.get(superset) || 0) >= 2) {
+      return superset;
     }
   }
-  if (!best || tie || bestScore < 2) return null;
-  return best;
+  return tied[0] || null;
 }
 
 export function looksLikeCode(content) {
@@ -216,7 +243,7 @@ export function resolveSnippetPlan(content, languageHint) {
   if (PLAIN_LANGUAGES.has(lang)) return { mode: 'plain', display: raw };
   if (lang && lang !== 'auto') return { mode: 'language', language: lang, display };
 
-  if (!looksLikeCode(body)) return { mode: 'plain', display: raw };
+  if (lang !== 'auto' && !looksLikeCode(body)) return { mode: 'plain', display: raw };
   const guessed = guessLanguage(body);
   if (guessed) return { mode: 'language', language: guessed, display };
   return { mode: 'auto', display };

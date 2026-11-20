@@ -719,6 +719,78 @@ test.describe('ZIP 导出高亮与离线提示', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test('file:// 下同节点并发加载循环依赖语言与自动识别片段不死锁且全部高亮', async ({ page }) => {
+    const { execFileSync } = await import('node:child_process');
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { pathToFileURL } = await import('node:url');
+
+    const dir = mkdtempSync(join(tmpdir(), 'atlas-hl-concurrent-'));
+    try {
+      const dataPath = join(dir, 'data.json');
+      const htmlPath = join(dir, 'out.html');
+      const graphData = {
+        schemaVersion: '2.0',
+        meta: {
+          title: '并发循环依赖高亮回归',
+          language: 'zh-CN',
+          generatedByModel: 'test',
+          level: 0,
+          depth: 2,
+          depthReason: '验证并发加载 JS/HTML/TSX/Markdown/Vue 与无 language 自动推断',
+        },
+        streams: [{ id: 's1', title: 'S1' }],
+        nodes: [
+          {
+            id: 'n1',
+            streamIds: ['s1'],
+            role: 'entry',
+            title: '并发多语言片段',
+            anchors: [
+              { kind: 'snippet', label: 'JS', language: 'javascript', content: 'export const x = 42;\nfunction hi() { return x; }' },
+              { kind: 'snippet', label: 'HTML', language: 'html', content: '<div class="box"><script>const a = 1;</script></div>' },
+              { kind: 'snippet', label: 'TSX', language: 'tsx', content: 'export interface Props { id: string }\nexport const App = (p: Props) => <div>{p.id}</div>;' },
+              { kind: 'snippet', label: 'MD', language: 'markdown', content: '# 标题\n\n`code`\n\n**加粗**' },
+              { kind: 'snippet', label: 'Vue', language: 'vue', content: '<template><section>{{ msg }}</section></template>' },
+              { kind: 'snippet', label: 'AutoPy', content: 'def foo(x):\n    return x + 1' },
+              { kind: 'snippet', label: 'AutoTS', content: 'export const title: string = "Atlas";' },
+            ],
+            deepDive: {
+              askPrompts: [{ title: '并发依赖', prompt: '请解释为什么并发加载存在互相引用的语言包不会阻塞？' }],
+            },
+          },
+          { id: 'n2', streamIds: ['s1'], role: 'core', title: 'N2' },
+          { id: 'n3', streamIds: ['s1'], role: 'outcome', title: 'N3' },
+        ],
+        edges: [
+          { id: 'e1', source: 'n1', target: 'n2', label: '推进1' },
+          { id: 'e2', source: 'n2', target: 'n3', label: '推进2' },
+        ],
+      };
+      writeFileSync(dataPath, JSON.stringify(graphData), 'utf8');
+      execFileSync('node', ['scripts/build_atlas.mjs', '--data', dataPath, '--out', htmlPath], {
+        cwd: process.cwd(),
+      });
+
+      const pageErrors = [];
+      page.on('pageerror', (err) => pageErrors.push(String(err)));
+      await page.goto(pathToFileURL(htmlPath).href);
+      await waitForCanvas(page);
+
+      await page.locator('[data-node-id="n1"] .atlas-node-body').click();
+      for (const label of ['JS', 'HTML', 'TSX', 'MD', 'Vue', 'AutoPy', 'AutoTS']) {
+        const pre = page.locator(`[data-snippet-label="${label}"] pre`);
+        await expect(pre).toHaveAttribute('data-highlighted', 'true');
+        const spanCount = await pre.locator('span[class^="hljs-"]').count();
+        expect(spanCount, `${label} 应渲染出高亮 token`).toBeGreaterThan(0);
+      }
+      expect(pageErrors).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 

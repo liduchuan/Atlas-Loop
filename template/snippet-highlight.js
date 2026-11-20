@@ -14,11 +14,27 @@ function inlineSource(id) {
   return el.textContent || '';
 }
 
-function moduleUrl(id) {
-  const inline = inlineSource(id);
-  if (inline.trim()) {
-    return URL.createObjectURL(new Blob([inline], { type: 'text/javascript' }));
+function toBase64Utf8(str) {
+  const bytes = new TextEncoder().encode(str);
+  const chunkSize = 0x8000;
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
   }
+  return btoa(bin);
+}
+
+function evalInlineModule(source) {
+  const match = String(source || '').match(/export\s*\{\s*([\w$]+)\s+as\s+default\s*\}\s*;?\s*$/);
+  if (!match) {
+    throw new Error('内联模块导出格式不支持回退求值');
+  }
+  const body = `${source.slice(0, match.index)}\nreturn ${match[1]};`;
+  const exported = new Function(body)();
+  return { default: exported };
+}
+
+function devModuleUrl(id) {
   if (id === 'core') return '/__hljs/core.js';
   if (id.startsWith('lang-')) return `/__hljs/lang/${id.slice(5)}.js`;
   return '';
@@ -27,10 +43,34 @@ function moduleUrl(id) {
 function loadModule(id) {
   if (moduleLoads.has(id)) return moduleLoads.get(id);
   const pending = (async () => {
-    const url = moduleUrl(id);
+    const inline = inlineSource(id);
+    if (inline.trim()) {
+      let blobUrl = '';
+      try {
+        blobUrl = URL.createObjectURL(new Blob([inline], { type: 'text/javascript' }));
+        return await import(blobUrl);
+      } catch {
+        // Safari / WebKit file:// 下 blob: 创建或动态 import 可能被拦截，依次尝试 data: URL 与直接求值
+      } finally {
+        if (blobUrl) {
+          try { URL.revokeObjectURL(blobUrl); } catch {}
+        }
+      }
+      try {
+        return await import(`data:text/javascript;base64,${toBase64Utf8(inline)}`);
+      } catch {
+        // 某些受限环境禁用 data: 模块时回退到隔离函数求值
+      }
+      return evalInlineModule(inline);
+    }
+
+    const url = devModuleUrl(id);
     if (!url) throw new Error(`缺少高亮模块 ${id}`);
-    return import(url);
-  })();
+    return await import(url);
+  })().catch((error) => {
+    moduleLoads.delete(id);
+    throw error;
+  });
   moduleLoads.set(id, pending);
   return pending;
 }
@@ -67,65 +107,63 @@ function loadCore() {
   return corePromise;
 }
 
-function ensureLanguage(hljs, manifest, name, stack) {
-  const canonical = manifest.aliases?.[name] || name;
-  if (!manifest.languages?.includes(canonical)) return Promise.resolve(null);
+function collectDeps(manifest, roots) {
+  const visited = new Set();
+  const queue = [];
+  for (const raw of roots) {
+    const canonical = manifest.aliases?.[raw] || raw;
+    if (canonical && manifest.languages?.includes(canonical) && !visited.has(canonical)) {
+      visited.add(canonical);
+      queue.push(canonical);
+    }
+  }
+  for (let i = 0; i < queue.length; i++) {
+    const name = queue[i];
+    for (const dep of manifest.deps?.[name] || []) {
+      const canonicalDep = manifest.aliases?.[dep] || dep;
+      if (canonicalDep && manifest.languages?.includes(canonicalDep) && !visited.has(canonicalDep)) {
+        visited.add(canonicalDep);
+        queue.push(canonicalDep);
+      }
+    }
+  }
+  return queue;
+}
+
+function registerOneLanguage(hljs, canonical) {
   if (hljs.getLanguage(canonical)) return Promise.resolve(canonical);
-  // xml 与 javascript 等语法互相引用。遇到调用栈上已有的语言就先返回，避免死循环。
-  if (stack?.has(canonical)) return Promise.resolve(null);
   if (languageLoads.has(canonical)) return languageLoads.get(canonical);
 
-  let resolveLoad;
-  let rejectLoad;
-  const pending = new Promise((resolve, reject) => {
-    resolveLoad = resolve;
-    rejectLoad = reject;
-  });
-  languageLoads.set(canonical, pending);
-  const childStack = new Set(stack || []);
-  childStack.add(canonical);
-
-  (async () => {
-    for (const dep of manifest.deps?.[canonical] || []) {
-      await ensureLanguage(hljs, manifest, dep, childStack);
-    }
-    if (!hljs.getLanguage(canonical)) {
-      const mod = await loadModule(`lang-${canonical}`);
-      const factory = typeof mod.default === 'function' ? mod.default : mod.default?.default;
-      if (typeof factory !== 'function') {
-        resolveLoad(null);
-        return;
+  const pending = loadModule(`lang-${canonical}`)
+    .then((mod) => {
+      if (!hljs.getLanguage(canonical)) {
+        const factory = typeof mod.default === 'function' ? mod.default : mod.default?.default;
+        if (typeof factory !== 'function') return null;
+        hljs.registerLanguage(canonical, factory);
       }
-      hljs.registerLanguage(canonical, factory);
-    }
-    resolveLoad(hljs.getLanguage(canonical) ? canonical : null);
-  })().catch((error) => {
-    languageLoads.delete(canonical);
-    rejectLoad(error);
-  });
+      return hljs.getLanguage(canonical) ? canonical : null;
+    })
+    .catch((error) => {
+      languageLoads.delete(canonical);
+      throw error;
+    });
 
+  languageLoads.set(canonical, pending);
   return pending;
 }
 
+async function ensureLanguage(hljs, manifest, name) {
+  const canonical = manifest.aliases?.[name] || name;
+  if (!manifest.languages?.includes(canonical)) return null;
+  const group = collectDeps(manifest, [canonical]);
+  // 并行独立加载整个依赖闭包，避免 javascript <-> xml 等双向依赖引发并发死锁
+  await Promise.all(group.map((lang) => registerOneLanguage(hljs, lang).catch(() => null)));
+  return hljs.getLanguage(canonical) ? canonical : null;
+}
+
 async function ensureCommon(hljs, manifest) {
-  const names = [];
-  const seen = new Set();
-  for (const name of manifest.common || []) {
-    for (const dep of manifest.deps?.[name] || []) {
-      if (!seen.has(dep)) {
-        seen.add(dep);
-        names.push(dep);
-      }
-    }
-    if (!seen.has(name)) {
-      seen.add(name);
-      names.push(name);
-    }
-  }
-  await Promise.all(names.map((name) => loadModule(`lang-${name}`).catch(() => null)));
-  for (const name of names) {
-    if (!hljs.getLanguage(name)) await ensureLanguage(hljs, manifest, name);
-  }
+  const group = collectDeps(manifest, manifest.common || []);
+  await Promise.all(group.map((lang) => registerOneLanguage(hljs, lang).catch(() => null)));
 }
 
 export async function highlightSnippet(plan) {
