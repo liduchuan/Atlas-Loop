@@ -1,5 +1,7 @@
 # Atlas Loop (`@liduchuan/atlas-loop`)
 
+[简体中文](README.md) | [English](README.en.md)
+
 一个面向持续学习者的通用递归学习地图 Agent Skill：把**任何陌生主题**——科学概念、手艺、商业模式、书籍、软件工具或代码库——拆解为**独立、零 CDN 的离线交互式 HTML 地图**，随学习者的成长轨迹自适应调整知识深度（2–6 阶），并为每个节点配上 `↳` 追问提示与递归子图提示。
 
 ## 为什么需要 Atlas Loop
